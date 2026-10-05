@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Minecraft Web Player</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%235d9e3c'/><rect y='10' width='16' height='6' fill='%23845e3a'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo-block"></span>Minecraft Web Player</div>
+    <div id="user" class="user" hidden>
+      <div class="face" id="userFace"></div>
+      <span id="userName"></span>
+      <button class="btn ghost small" id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Signed out -->
+    <section id="loginView" class="view" hidden>
+      <div class="card hero">
+        <h1>Play Minecraft: Java Edition in your browser</h1>
+        <p>Sign in with the Microsoft account that owns Minecraft. The real, official game runs on this server and streams to you. Your worlds, settings and multiplayer servers work like normal.</p>
+        <a class="btn ms" href="/auth/login">
+          <svg viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+          Sign in with Microsoft
+        </a>
+        <p id="loginError" class="error" hidden></p>
+        <p class="fine">You need to own Minecraft: Java Edition. Ownership is checked with Mojang when you sign in. Your password goes straight to Microsoft and never reaches this site.</p>
+      </div>
+    </section>
+
+    <!-- Signed in, not playing -->
+    <section id="lobbyView" class="view" hidden>
+      <div class="card lobby">
+        <div class="lobby-head">
+          <div class="face big" id="lobbyFace"></div>
+          <div>
+            <h2>Welcome, <span id="lobbyName"></span></h2>
+            <p class="muted">Minecraft: Java Edition · owned</p>
+          </div>
+        </div>
+        <div class="play-row">
+          <label for="versionSelect" class="muted">Version</label>
+          <select id="versionSelect"><option>Loading…</option></select>
+          <button class="btn primary" id="playBtn" disabled>Play</button>
+        </div>
+        <p id="lobbyError" class="error" hidden></p>
+
+        <div id="statusBox" class="status" hidden>
+          <div class="status-line"><span id="statusText">Preparing…</span><span id="statusCount" class="muted"></span></div>
+          <div class="bar"><div id="statusBar"></div></div>
+          <details>
+            <summary>Game log</summary>
+            <pre id="logBox"></pre>
+          </details>
+          <button class="btn ghost small" id="cancelBtn">Cancel</button>
+        </div>
+        <p class="fine">The first launch of a version downloads it from Mojang (around 600 MB), so give it a few minutes. Later launches are quick.</p>
+      </div>
+    </section>
+
+    <!-- Playing -->
+    <section id="gameView" class="view game" hidden>
+      <div id="stage" class="stage" tabindex="0">
+        <canvas id="screen"></canvas>
+        <div id="overlay" class="overlay">
+          <div>
+            <strong>Click to play</strong>
+            <span>Esc releases your mouse · F11 or ⛶ for fullscreen</span>
+          </div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <span class="muted" id="gameInfo"></span>
+        <div class="spacer"></div>
+        <button class="btn ghost small" id="fullscreenBtn" title="Fullscreen">⛶ Fullscreen</button>
+        <button class="btn danger small" id="stopBtn">Save &amp; quit</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="vendor/jsmpeg.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

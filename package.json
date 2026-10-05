@@ -1,0 +1,30 @@
+{
+  "name": "mcplayerweb",
+  "version": "1.0.0",
+  "description": "Sign in with Microsoft and play the real Minecraft: Java Edition in your browser",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gceoalexyt-ops/Mcplayerweb.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/gceoalexyt-ops/Mcplayerweb/issues"
+  },
+  "homepage": "https://github.com/gceoalexyt-ops/Mcplayerweb#readme",
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "ws": "^8.22.0",
+    "x11": "^4.3.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

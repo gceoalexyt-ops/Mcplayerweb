@@ -1,0 +1,14 @@
+services:
+  mcweb:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+      - "3000:3000"
+    volumes:
+      - mcdata:/data
+    shm_size: 1gb
+    restart: unless-stopped
+volumes:
+  mcdata:
