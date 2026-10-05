@@ -17,16 +17,22 @@ const hasPulse = config.audio && spawnSync('sh', ['-c', 'command -v pulseaudio']
 
 // Sensible first-run settings for a streamed, software-rendered game. Only
 // written when the player has no options.txt yet; in-game changes are kept.
+// Keys a version doesn't know are ignored, so old and new names are both set.
 const DEFAULT_OPTIONS = [
   'rawMouseInput:false',
   'pauseOnLostFocus:false',
   'fullscreen:false',
   'enableVsync:false',
   'maxFps:60',
+  'inactivityFpsLimit:"minimized"',
   'renderDistance:8',
   'simulationDistance:8',
-  'graphicsMode:0',
-  'fancyGraphics:false',
+  'graphicsPreset:"fast"', // 26.1+
+  'graphicsMode:0', // 1.19 - 1.21
+  'fancyGraphics:false', // before 1.19
+  // 26.1+ renders through SDL3, which asks for an sRGB OpenGL framebuffer that
+  // Xvfb can't provide; Mesa's software Vulkan driver (lavapipe) works.
+  'preferredGraphicsBackend:"vulkan"',
   'onboardAccessibility:false',
   'tutorialStep:none',
   'skipMultiplayerWarning:true',

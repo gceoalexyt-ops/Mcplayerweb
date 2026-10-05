@@ -13,7 +13,7 @@ Minecraft tokens never leave the server. The browser only gets a session cookie.
 
 ## Status
 
-The sign-in flow, the streaming pipeline and input injection were tested end-to-end with a stand-in Java app. The full flow with the real game and a real account has **not** been tested yet: the dev sandbox could not reach Mojang's servers.
+The downloader was tested against Mojang's servers with Minecraft 26.3: every file passed its SHA-1 check. The real game was launched on Xvfb with a placeholder login and reached the title screen with sound initialised (Vulkan via Mesa lavapipe, on Ubuntu 24.04). Not yet confirmed with the real game: sign-in with a real account, keyboard/mouse input, audio in the browser stream, and setup on Debian bookworm (Codespaces).
 
 ## Microsoft / Azure setup (required)
 
@@ -54,7 +54,7 @@ docker compose up --build
 
 Open `BASE_URL`, sign in, pick a version and press **Play**. The first launch of a version downloads ~600 MB from Mojang.
 
-Without Docker you need Node 20+, `Xvfb`, `ffmpeg`, Mesa OpenGL, and optionally `pulseaudio` for sound. Then run `npm install && npm start`.
+Without Docker you need Node 20+, `Xvfb`, `ffmpeg`, Mesa OpenGL and Vulkan (`mesa-vulkan-drivers`; Minecraft 26.1+ renders with Vulkan on a virtual display), and optionally `pulseaudio` for sound. Then run `npm install && npm start`.
 
 For anything beyond localhost, put it behind HTTPS (e.g. Caddy or nginx), set `BASE_URL=https://…` and `TRUST_PROXY=1`. Pointer Lock and fullscreen keyboard lock work best over HTTPS.
 

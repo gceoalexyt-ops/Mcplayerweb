@@ -155,11 +155,22 @@ async function ensureJava(version, onProgress) {
 
   const root = path.join(dirs.runtimes, component);
   const marker = path.join(root, '.installed');
+  const manifestFile = path.join(root, '.manifest.json');
   const javaBin = path.join(root, 'bin', 'java');
   const installed = await fsp.readFile(marker, 'utf8').catch(() => '');
-  if (installed === entry.manifest.sha1 && fs.existsSync(javaBin)) return javaBin;
 
-  const manifest = await fetchJson(entry.manifest.url);
+  // Every launch re-checks the installed files against the cached manifest,
+  // so a deleted or truncated file is fetched again instead of breaking Java.
+  let manifest = null;
+  if (installed === entry.manifest.sha1) {
+    manifest = JSON.parse(await fsp.readFile(manifestFile, 'utf8').catch(() => 'null'));
+  }
+  if (!manifest) {
+    await fsp.rm(marker, { force: true });
+    await fsp.rm(manifestFile, { force: true });
+    await download(entry.manifest.url, manifestFile, { sha1: entry.manifest.sha1, size: entry.manifest.size });
+    manifest = JSON.parse(await fsp.readFile(manifestFile, 'utf8'));
+  }
   const files = Object.entries(manifest.files);
   for (const [rel, f] of files) if (f.type === 'directory') await fsp.mkdir(path.join(root, rel), { recursive: true });
   const toFetch = files.filter(([, f]) => f.type === 'file');
@@ -173,6 +184,7 @@ async function ensureJava(version, onProgress) {
   for (const [rel, f] of files) {
     if (f.type !== 'link') continue;
     const link = path.join(root, rel);
+    if ((await fsp.readlink(link).catch(() => null)) === f.target) continue;
     await fsp.rm(link, { force: true });
     await fsp.symlink(f.target, link);
   }
