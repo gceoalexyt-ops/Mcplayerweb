@@ -137,6 +137,7 @@ $('playBtn').onclick = async () => {
   const version = $('versionSelect').value;
   try { localStorage.setItem('mcweb.version', version); } catch { /* private mode */ }
   showError($('lobbyError'), '');
+  rejoinByHand = false;
   $('playBtn').disabled = true;
   try {
     renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version }) }));
@@ -193,7 +194,11 @@ async function pollGame() {
     pollTimer = setTimeout(pollGame, 3000);
     return;
   }
-  if (s.state === 'running') return enterGame(s);
+  if (s.state === 'running') {
+    if (!rejoinByHand) return enterGame(s);
+    renderStatus(s);
+    return;
+  }
   renderStatus(s);
   if (['preparing', 'starting', 'stopping'].includes(s.state)) pollTimer = setTimeout(pollGame, 1000);
 }
@@ -224,8 +229,24 @@ function enterGame(status) {
   $('gameInfo').textContent = `Minecraft ${status.version}${status.audio ? '' : ' · no audio'}`;
   overlay.hidden = false;
 
+  // Say what the video is doing until the first picture arrives, so a black
+  // screen always comes with a reason
+  let firstFrame = false;
+  setVideoStatus('Connecting to the game…');
+  clearTimeout(videoTimer);
+  videoTimer = setTimeout(() => {
+    if (!firstFrame && game) setVideoStatus(`${$('videoStatus').textContent} (still waiting after 20 s)`);
+  }, 20000);
+
   player = new JSMpeg.Player(wsUrl('/ws/video'), {
     canvas,
+    onSourceEstablished: () => { if (!firstFrame) setVideoStatus('Receiving video, waiting for the first picture…'); },
+    onVideoDecode: () => {
+      if (firstFrame) return;
+      firstFrame = true;
+      clearTimeout(videoTimer);
+      setVideoStatus('');
+    },
     audio: !!status.audio,
     videoBufferSize: 2 * 1024 * 1024,
     audioBufferSize: 256 * 1024,
@@ -237,7 +258,7 @@ function enterGame(status) {
   const source = player.source;
   const origClose = source.onClose?.bind(source);
   if (source.socket) source.socket.addEventListener('close', onVideoClosed);
-  else source.onClose = (...a) => { origClose?.(...a); onVideoClosed(); };
+  else source.onClose = (...a) => { origClose?.(...a); onVideoClosed(a[0]); };
 
   inputWs = new WebSocket(wsUrl('/ws/input'));
   inputWs.onmessage = (e) => {
@@ -249,13 +270,28 @@ function enterGame(status) {
   if (prefersTouch()) enableTouch();
 }
 
-function onVideoClosed() {
+let videoTimer = null;
+let rejoinByHand = false;
+
+function setVideoStatus(text) {
+  $('videoStatus').textContent = text;
+  $('videoStatus').hidden = !text;
+}
+
+function onVideoClosed(ev) {
   if (!game) return;
   leaveGame();
+  // 4000/4001 are our own "opened elsewhere" / "game ended" closes
+  if (ev && ev.code !== 4000 && ev.code !== 4001) {
+    rejoinByHand = true; // don't loop straight back into a broken stream
+    showError($('lobbyError'), `The video connection closed (code ${ev.code}${ev.reason ? `: ${ev.reason}` : ''}). Press Play to reconnect.`);
+  }
 }
 
 function leaveGame() {
   game = null;
+  clearTimeout(videoTimer);
+  setVideoStatus('');
   disableTouch();
   if (document.pointerLockElement) document.exitPointerLock();
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
