@@ -240,6 +240,13 @@ function enterGame(status) {
   else source.onClose = (...a) => { origClose?.(...a); onVideoClosed(); };
 
   inputWs = new WebSocket(wsUrl('/ws/input'));
+  inputWs.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (typeof msg.captured === 'boolean') setCaptured(msg.captured);
+  };
+  // Phones and tablets have no Pointer Lock and no keyboard: use touch controls
+  if (prefersTouch()) enableTouch();
 }
 
 function onVideoClosed() {
@@ -249,6 +256,7 @@ function onVideoClosed() {
 
 function leaveGame() {
   game = null;
+  disableTouch();
   if (document.pointerLockElement) document.exitPointerLock();
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   try { player?.destroy(); } catch { /* already closed */ }
@@ -273,7 +281,7 @@ $('fullscreenBtn').onclick = async () => {
 };
 
 async function capture() {
-  if (!game) return;
+  if (!game || touchMode) return;
   player?.audioOut?.unlock?.(() => {});
   send(['f']);
   try {
@@ -282,6 +290,7 @@ async function capture() {
     try { await stage.requestPointerLock(); } catch { /* user must click again */ }
   }
 }
+overlay.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch' || !hasPointerLock) enableTouch(); });
 overlay.addEventListener('click', capture);
 stage.addEventListener('click', () => { if (document.pointerLockElement !== stage) capture(); });
 
@@ -343,7 +352,12 @@ document.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 function onKey(e, down) {
-  if (!game || !locked()) return;
+  if (!game || !(locked() || touchMode)) return;
+  if (e.target === tcInput) {
+    // Text from the on-screen keyboard arrives as 'input' events; only Enter comes as a key
+    if (e.key === 'Enter') { e.preventDefault(); if (down) tapKey('Enter'); }
+    return;
+  }
   if (e.code === 'Escape' && down) lastEscDown = performance.now();
   e.preventDefault();
   if (down && e.repeat) return; // the X server generates its own key repeat
@@ -352,5 +366,261 @@ function onKey(e, down) {
 document.addEventListener('keydown', (e) => onKey(e, true));
 document.addEventListener('keyup', (e) => onKey(e, false));
 window.addEventListener('blur', () => send(['r']));
+
+// ------------------------------------------------------------------ touch
+
+const touchLayer = $('touch');
+const tcInput = $('tcInput');
+const hasPointerLock = 'requestPointerLock' in Element.prototype;
+let touchMode = false;
+let captured = false;
+
+function prefersTouch() {
+  return !hasPointerLock || (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches);
+}
+
+function enableTouch() {
+  if (!game || touchMode) return;
+  touchMode = true;
+  document.body.classList.add('touch-mode');
+  touchLayer.hidden = false;
+  overlay.hidden = true;
+  $('tcFullscreen').hidden = !(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  send(['f']);
+}
+
+function disableTouch() {
+  if (!touchMode) return;
+  endGestures();
+  setStick(0, 0);
+  for (const el of touchLayer.querySelectorAll('.on')) el.classList.remove('on');
+  touchMode = false;
+  document.body.classList.remove('touch-mode');
+  touchLayer.hidden = true;
+  tcInput.blur();
+}
+
+function setCaptured(value) {
+  if (captured === value) return;
+  captured = value;
+  touchLayer.classList.toggle('captured', value);
+  // Switching between menu and game mid-gesture: let go of everything
+  endGestures();
+  if (!value) setStick(0, 0);
+}
+
+function tapKey(code, shift = false) {
+  if (shift) send(['k', 'ShiftLeft', 1]);
+  send(['k', code, 1]);
+  send(['k', code, 0]);
+  if (shift) send(['k', 'ShiftLeft', 0]);
+}
+
+// Browser coordinates -> game pixels, allowing for the letterboxing of object-fit: contain
+function toGame(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const scale = Math.min(r.width / canvas.width, r.height / canvas.height);
+  const left = r.left + (r.width - canvas.width * scale) / 2;
+  const top = r.top + (r.height - canvas.height * scale) / 2;
+  return { x: (clientX - left) / scale, y: (clientY - top) / scale, scale };
+}
+
+// Touches on the picture itself. In menus they act like a mouse at the finger;
+// while playing, dragging looks around, a tap uses/places, and holding still breaks.
+const gestures = new Map();
+const LOOK_SPEED = 1.3;
+
+function endGestures() {
+  for (const g of gestures.values()) {
+    clearTimeout(g.holdTimer);
+    if (g.button !== null) send(['b', g.button, 0]);
+  }
+  gestures.clear();
+}
+
+touchLayer.addEventListener('pointerdown', (e) => {
+  if (!touchMode || e.target !== touchLayer) return;
+  e.preventDefault();
+  touchLayer.setPointerCapture(e.pointerId);
+  player?.audioOut?.unlock?.(() => {});
+  const g = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, t: performance.now(), moved: false, button: null, holdTimer: null, menu: !captured };
+  gestures.set(e.pointerId, g);
+  if (g.menu) {
+    const p = toGame(e.clientX, e.clientY);
+    send(['a', p.x, p.y]);
+    send(['b', 0, 1]);
+    g.button = 0;
+  } else {
+    g.holdTimer = setTimeout(() => {
+      if (g.moved || !gestures.has(e.pointerId)) return;
+      g.button = 0; // hold still to break blocks
+      send(['b', 0, 1]);
+      navigator.vibrate?.(15);
+    }, 300);
+  }
+});
+
+touchLayer.addEventListener('pointermove', (e) => {
+  const g = gestures.get(e.pointerId);
+  if (!g) return;
+  e.preventDefault();
+  if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > 10) g.moved = true;
+  if (g.menu) {
+    const p = toGame(e.clientX, e.clientY);
+    send(['a', p.x, p.y]);
+  } else {
+    const { scale } = toGame(0, 0);
+    const dx = Math.round(((e.clientX - g.x) / scale) * LOOK_SPEED);
+    const dy = Math.round(((e.clientY - g.y) / scale) * LOOK_SPEED);
+    if (dx || dy) {
+      send(['m', dx, dy]);
+      g.x += (dx / LOOK_SPEED) * scale;
+      g.y += (dy / LOOK_SPEED) * scale;
+    }
+  }
+});
+
+function endGesture(e) {
+  const g = gestures.get(e.pointerId);
+  if (!g) return;
+  gestures.delete(e.pointerId);
+  clearTimeout(g.holdTimer);
+  if (g.menu) {
+    const p = toGame(e.clientX, e.clientY);
+    send(['a', p.x, p.y]);
+  }
+  if (g.button !== null) {
+    send(['b', g.button, 0]);
+  } else if (!g.moved && e.type === 'pointerup' && performance.now() - g.t < 300) {
+    send(['b', 2, 1]); // quick tap while playing: use / place
+    send(['b', 2, 0]);
+  }
+}
+touchLayer.addEventListener('pointerup', endGesture);
+touchLayer.addEventListener('pointercancel', endGesture);
+
+// Buttons: data-key holds a key, data-mouse holds a mouse button,
+// data-toggle latches a key (sneak), data-wheel scrolls the hotbar.
+function bindHold(el, down, up) {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    el.setPointerCapture(e.pointerId);
+    player?.audioOut?.unlock?.(() => {});
+    down();
+  });
+  const release = (e) => { e.preventDefault(); up(); };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+for (const el of touchLayer.querySelectorAll('[data-key]')) {
+  const code = el.dataset.key;
+  bindHold(el, () => { el.classList.add('on'); send(['k', code, 1]); }, () => { el.classList.remove('on'); send(['k', code, 0]); });
+}
+for (const el of touchLayer.querySelectorAll('[data-mouse]')) {
+  const button = Number(el.dataset.mouse);
+  bindHold(el, () => { el.classList.add('on'); send(['b', button, 1]); }, () => { el.classList.remove('on'); send(['b', button, 0]); });
+}
+for (const el of touchLayer.querySelectorAll('[data-wheel]')) {
+  const steps = Number(el.dataset.wheel);
+  bindHold(el, () => send(['w', steps]), () => {});
+}
+for (const el of touchLayer.querySelectorAll('[data-toggle]')) {
+  const code = el.dataset.toggle;
+  bindHold(el, () => {
+    const on = el.classList.toggle('on');
+    send(['k', code, on ? 1 : 0]);
+  }, () => {});
+}
+
+// Joystick -> WASD, pushing it all the way forward also sprints
+const stick = $('tcStick');
+const knob = $('tcKnob');
+const stickKeys = new Set();
+let stickPointer = null;
+
+function setStick(nx, ny) {
+  knob.style.transform = `translate(${nx * 37}px, ${ny * 37}px)`;
+  const want = new Set();
+  if (ny < -0.35) want.add('KeyW');
+  if (ny > 0.35) want.add('KeyS');
+  if (nx < -0.35) want.add('KeyA');
+  if (nx > 0.35) want.add('KeyD');
+  if (ny < -0.9) want.add('ControlLeft');
+  for (const k of stickKeys) if (!want.has(k)) { send(['k', k, 0]); stickKeys.delete(k); }
+  for (const k of want) if (!stickKeys.has(k)) { send(['k', k, 1]); stickKeys.add(k); }
+}
+
+function stickMove(e) {
+  const r = stick.getBoundingClientRect();
+  let nx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+  let ny = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+  const len = Math.hypot(nx, ny);
+  if (len > 1) { nx /= len; ny /= len; }
+  setStick(nx, ny);
+}
+stick.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  stick.setPointerCapture(e.pointerId);
+  stickPointer = e.pointerId;
+  stickMove(e);
+});
+stick.addEventListener('pointermove', (e) => { if (e.pointerId === stickPointer) stickMove(e); });
+const stickEnd = (e) => { if (e.pointerId === stickPointer) { stickPointer = null; setStick(0, 0); } };
+stick.addEventListener('pointerup', stickEnd);
+stick.addEventListener('pointercancel', stickEnd);
+
+// The phone's own keyboard: focus a hidden text field and forward what's typed.
+// The field always holds one space so a backspace on it is still noticed.
+const SHIFTED = { '!': 'Digit1', '@': 'Digit2', '#': 'Digit3', $: 'Digit4', '%': 'Digit5', '^': 'Digit6', '&': 'Digit7', '*': 'Digit8', '(': 'Digit9', ')': 'Digit0', _: 'Minus', '+': 'Equal', '{': 'BracketLeft', '}': 'BracketRight', '|': 'Backslash', ':': 'Semicolon', '"': 'Quote', '<': 'Comma', '>': 'Period', '?': 'Slash', '~': 'Backquote' };
+const PLAIN = { ' ': 'Space', '-': 'Minus', '=': 'Equal', '[': 'BracketLeft', ']': 'BracketRight', '\\': 'Backslash', ';': 'Semicolon', "'": 'Quote', ',': 'Comma', '.': 'Period', '/': 'Slash', '`': 'Backquote' };
+
+function typeChar(ch) {
+  if (/^[a-z]$/.test(ch)) return tapKey(`Key${ch.toUpperCase()}`);
+  if (/^[A-Z]$/.test(ch)) return tapKey(`Key${ch}`, true);
+  if (/^[0-9]$/.test(ch)) return tapKey(`Digit${ch}`);
+  if (PLAIN[ch]) return tapKey(PLAIN[ch]);
+  if (SHIFTED[ch]) return tapKey(SHIFTED[ch], true);
+  if (ch === '\n') return tapKey('Enter');
+}
+
+function resetInput() {
+  tcInput.value = ' ';
+  try { tcInput.setSelectionRange(1, 1); } catch { /* not focused */ }
+}
+
+tcInput.addEventListener('input', () => {
+  const v = tcInput.value;
+  if (v.length === 0) tapKey('Backspace');
+  else for (const ch of v.slice(1)) typeChar(ch);
+  resetInput();
+});
+
+function openKeyboard() {
+  resetInput();
+  tcInput.focus();
+}
+$('tcKeyboard').addEventListener('click', openKeyboard);
+$('tcChat').addEventListener('click', () => { tapKey('KeyT'); openKeyboard(); });
+for (const id of ['tcKeyboard', 'tcChat', 'tcFullscreen', 'tcQuit']) {
+  $(id).addEventListener('pointerdown', (e) => e.stopPropagation());
+}
+
+$('tcFullscreen').addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else {
+      await stage.requestFullscreen();
+      await screen.orientation?.lock?.('landscape').catch(() => {});
+    }
+  } catch { /* not supported */ }
+});
+
+$('tcQuit').addEventListener('click', () => {
+  if (confirm('Save and quit the game?')) $('stopBtn').click();
+});
 
 boot();

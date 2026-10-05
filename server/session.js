@@ -156,6 +156,7 @@ class PlayerSession extends EventEmitter {
       });
 
       this.input = new X11Input(this.display, config.screenWidth, config.screenHeight);
+      this.input.onCapturedChange = (captured) => this.emit('captured', captured);
       await this.input.connect();
       await waitFor(() => this.stopping || this.input.gameWindow !== 0, 5 * 60 * 1000, 'the game window');
       if (this.stopping) return;
@@ -252,12 +253,32 @@ class PlayerSession extends EventEmitter {
     this.ffmpeg = null;
   }
 
+  attachInput(ws) {
+    // Tell the page whether the game has the mouse captured (touch controls
+    // switch between tapping menus and looking around on it)
+    const sendState = () => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ captured: !!this.input?.captured }));
+    };
+    sendState();
+    this.on('captured', sendState);
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data); } catch { return; }
+      this.handleInput(msg);
+    });
+    ws.on('close', () => {
+      this.off('captured', sendState);
+      this.input?.releaseAll();
+    });
+  }
+
   handleInput(msg) {
     const input = this.input;
     if (!input || this.state !== 'running' || !Array.isArray(msg)) return;
     const [t, a, b] = msg;
     switch (t) {
       case 'm': if (Number.isFinite(a) && Number.isFinite(b)) input.move(a, b); break;
+      case 'a': if (Number.isFinite(a) && Number.isFinite(b)) input.moveTo(a, b); break;
       case 'k': if (typeof a === 'string') input.key(a, !!b); break;
       case 'b': if (Number.isInteger(a)) input.button(a, !!b); break;
       case 'w': if (Number.isInteger(a)) input.wheel(a); break;

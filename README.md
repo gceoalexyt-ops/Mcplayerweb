@@ -54,6 +54,12 @@ Without a GPU the game renders on the CPU (Mesa llvmpipe). Plan on ~4 cores and 
 - **Fullscreen** (Chromium) also locks the keyboard, so Esc and shortcuts go to the game.
 - **Save & quit** shuts the game down cleanly, which saves single-player worlds. Games with no viewer stop after `IDLE_TIMEOUT_MINUTES`.
 
+On phones and tablets the game fills the screen with touch controls:
+- **Menus:** tap where you want to click; drag to move sliders and items.
+- **Playing:** drag on the picture to look around, tap to use/place, hold still to break. The joystick walks (push it all the way up to sprint). The buttons are Jump, Sneak (toggles), Hit, Use, ◀ ▶ for the hotbar, Inv and Chat.
+- **Top right:** Esc (pause/back), ⌨ opens your phone's keyboard to type into the game, ⛶ fullscreen (Android), Quit.
+- Turn the phone sideways for a bigger picture.
+
 ## Notes
 
 - Each Minecraft account can run one game at a time. `MAX_SESSIONS` caps the total.

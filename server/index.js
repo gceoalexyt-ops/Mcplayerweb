@@ -195,12 +195,7 @@ server.on('upgrade', (req, socket, head) => {
       if (pathname === '/ws/video') {
         game.attachVideo(ws);
       } else {
-        ws.on('message', (data) => {
-          let msg;
-          try { msg = JSON.parse(data); } catch { return; }
-          game.handleInput(msg);
-        });
-        ws.on('close', () => game.input?.releaseAll());
+        game.attachInput(ws);
       }
     });
   });

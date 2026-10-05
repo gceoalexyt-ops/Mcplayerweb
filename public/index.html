@@ -73,6 +73,33 @@
     <section id="gameView" class="view game" hidden>
       <div id="stage" class="stage" tabindex="0">
         <canvas id="screen"></canvas>
+        <!-- Touch controls (phones/tablets). In menus, taps land where you tap;
+             while playing, drag to look, tap to use, hold to break. -->
+        <div id="touch" class="touch" hidden>
+          <div class="tc-top">
+            <button class="tc-btn" data-key="Escape">Esc</button>
+            <button class="tc-btn" id="tcKeyboard" aria-label="Keyboard">⌨</button>
+            <button class="tc-btn" id="tcFullscreen" aria-label="Fullscreen">⛶</button>
+            <button class="tc-btn danger" id="tcQuit">Quit</button>
+          </div>
+          <div class="tc-play">
+            <div class="tc-stick" id="tcStick"><div class="tc-knob" id="tcKnob"></div></div>
+            <div class="tc-side">
+              <button class="tc-btn" data-key="KeyE">Inv</button>
+              <button class="tc-btn" id="tcChat">Chat</button>
+            </div>
+            <div class="tc-actions">
+              <button class="tc-btn" data-wheel="-1" aria-label="Previous slot">◀</button>
+              <button class="tc-btn" data-wheel="1" aria-label="Next slot">▶</button>
+              <button class="tc-btn" data-mouse="0">Hit</button>
+              <button class="tc-btn" data-mouse="2">Use</button>
+              <button class="tc-btn" data-toggle="ShiftLeft">Sneak</button>
+              <button class="tc-btn big" data-key="Space">Jump</button>
+            </div>
+          </div>
+          <div class="tc-hint" id="tcHint">Turn your phone sideways for a bigger picture</div>
+          <input id="tcInput" class="tc-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="Type into the game">
+        </div>
         <div id="overlay" class="overlay">
           <div>
             <strong>Click to play</strong>

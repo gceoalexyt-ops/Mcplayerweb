@@ -2,7 +2,9 @@
 
 // Injects browser input into the game's virtual X display with XTEST, and
 // keeps the game window focused and filling the screen (there is no window
-// manager on the virtual display).
+// manager on the virtual display). It also watches whether the game has
+// captured the mouse (in-game, cursor hidden) or shows a cursor (menus), which
+// the touch controls need to know.
 
 const x11 = require('x11');
 
@@ -41,6 +43,9 @@ class X11Input {
     this.pressedKeys = new Set();
     this.pressedButtons = new Set();
     this.timer = null;
+    this.cursorTimer = null;
+    this.captured = false;
+    this.onCapturedChange = null;
   }
 
   connect() {
@@ -57,6 +62,7 @@ class X11Input {
           // 1:1 pointer motion, no acceleration: the browser already applies the OS curve
           this.X.ChangePointerControl(1, 1, 0, true, true);
           this.timer = setInterval(() => this.manageWindows(), 1000);
+          this.watchCursor();
           resolve();
         });
       });
@@ -64,8 +70,34 @@ class X11Input {
     });
   }
 
+  // The game hides the cursor while it has the mouse captured (playing) and
+  // shows it in menus. XFixes lets us read the current cursor image.
+  watchCursor() {
+    this.X.require('fixes', (err, fixes) => {
+      if (err || !this.X) return;
+      fixes.QueryVersion(4, 0, () => {
+        let busy = false;
+        this.cursorTimer = setInterval(() => {
+          if (busy || !this.X) return;
+          busy = true;
+          fixes.GetCursorImage((e, img) => {
+            busy = false;
+            if (e || !img) return;
+            let visible = false;
+            for (let i = 3; i < img.cursorImage.length; i += 4) if (img.cursorImage[i]) { visible = true; break; }
+            if (this.captured === visible) {
+              this.captured = !visible;
+              this.onCapturedChange?.(this.captured);
+            }
+          });
+        }, 200);
+      });
+    });
+  }
+
   close() {
     clearInterval(this.timer);
+    clearInterval(this.cursorTimer);
     this.releaseAll();
     try { this.X?.terminate(); } catch { /* already gone */ }
     this.X = null;
@@ -102,6 +134,15 @@ class X11Input {
     if (!this.xtest) return;
     const clamp = (v) => Math.max(-2000, Math.min(2000, Math.round(v)));
     this.xtest.FakeInput(this.xtest.MotionNotify, 1, 0, 0, clamp(dx), clamp(dy));
+  }
+
+  // Absolute pointer position, for tapping on menus. Ignored while the game
+  // has the mouse captured, where a jump would spin the camera.
+  moveTo(x, y) {
+    if (!this.xtest || this.captured) return;
+    const cx = Math.max(0, Math.min(this.width - 1, Math.round(x)));
+    const cy = Math.max(0, Math.min(this.height - 1, Math.round(y)));
+    this.xtest.FakeInput(this.xtest.MotionNotify, 0, 0, this.root, cx, cy);
   }
 
   releaseAll() {

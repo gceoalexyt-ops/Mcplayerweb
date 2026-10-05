@@ -117,6 +117,65 @@ pre {
 .overlay strong { font-size: 18px; }
 .overlay span { color: var(--muted); font-size: 13px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
+
+/* ---- touch mode: the game fills the screen, with on-screen controls ---- */
+body.touch-mode { overflow: hidden; overscroll-behavior: none; }
+body.touch-mode .view.game {
+  position: fixed; inset: 0; z-index: 50; padding: 0; gap: 0; background: #000;
+}
+body.touch-mode .toolbar { display: none; }
+body.touch-mode .stage { border-radius: 0; touch-action: none; }
+body.touch-mode .stage canvas {
+  width: 100%; height: 100%; max-width: none; max-height: none; aspect-ratio: auto; object-fit: contain;
+}
+.touch {
+  position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+.tc-btn {
+  min-width: 48px; height: 44px; padding: 0 12px; border-radius: 12px;
+  font: 600 14px/1 system-ui, sans-serif; color: #fff;
+  background: rgba(20, 22, 26, .45); border: 1px solid rgba(255, 255, 255, .35);
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+.tc-btn.on, .tc-btn:active { background: rgba(93, 158, 60, .75); }
+.tc-btn.danger { background: rgba(194, 69, 61, .55); }
+.tc-btn.big { min-width: 72px; height: 72px; border-radius: 50%; }
+.tc-top {
+  position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right));
+  display: flex; gap: 8px;
+}
+.tc-play { position: absolute; inset: 0; pointer-events: none; }
+.tc-play > * { pointer-events: auto; }
+.touch:not(.captured) .tc-play { display: none; }
+.tc-stick {
+  position: absolute; left: max(20px, env(safe-area-inset-left)); bottom: max(20px, env(safe-area-inset-bottom));
+  width: 130px; height: 130px; border-radius: 50%;
+  background: rgba(20, 22, 26, .3); border: 2px solid rgba(255, 255, 255, .35); touch-action: none;
+}
+.tc-knob {
+  position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+  border-radius: 50%; background: rgba(255, 255, 255, .45); pointer-events: none;
+}
+.tc-side {
+  position: absolute; left: max(20px, env(safe-area-inset-left)); bottom: 170px;
+  display: flex; gap: 8px;
+}
+.tc-actions {
+  position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: repeat(2, auto); gap: 10px; justify-items: center; align-items: center;
+}
+.tc-hint {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: none;
+  padding: 8px 12px; border-radius: 8px; background: rgba(20, 22, 26, .8); font-size: 13px; color: var(--muted);
+  pointer-events: none; white-space: nowrap;
+}
+@media (orientation: portrait) { .tc-hint { display: block; top: auto; bottom: 24px; } .touch.captured .tc-hint { display: none; } }
+/* Off-screen but focusable, so the phone's keyboard can type into the game */
+.tc-input {
+  position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0;
+  font-size: 16px; border: 0; padding: 0; pointer-events: none;
+}
 .spacer { flex: 1; }
 
 main:has(.view.game:not([hidden])) { padding: 12px; align-items: stretch; }
