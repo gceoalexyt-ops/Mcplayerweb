@@ -175,22 +175,54 @@ app.post('/api/stop', requireAccount, async (req, res) => {
 
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: 'index.html' }));
 
+// Blocks cross-site WebSocket hijacking: only pages served by this site may
+// open the game's sockets. The site can be reached under more than one
+// address (BASE_URL, the Codespaces URL, or whatever host the browser used,
+// e.g. through a port forward), so accept the origin if it matches any of them.
+function originAllowed(req) {
+  let host;
+  try { host = new URL(req.headers.origin).host; } catch { return false; }
+  const allowed = new Set([new URL(config.baseUrl).host]);
+  if (config.codespaceUrl) allowed.add(new URL(config.codespaceUrl).host);
+  if (req.headers.host) allowed.add(req.headers.host);
+  if (config.trustProxy && req.headers['x-forwarded-host']) {
+    allowed.add(String(req.headers['x-forwarded-host']).split(',')[0].trim());
+  }
+  return allowed.has(host);
+}
+
+// Why would the game's sockets be refused for this page? The page asks this
+// when the video connection fails, so the player sees a real reason.
+app.post('/api/stream-check', requireAccount, (req, res) => {
+  const game = games.get(req.account.profile.id);
+  if (!originAllowed(req)) {
+    return res.json({ ok: false, reason: `This page's address (${req.headers.origin || 'unknown'}) doesn't match the server's address (${config.baseUrl}). Open the site at ${config.baseUrl}, or fix BASE_URL.` });
+  }
+  if (!game || game.state !== 'running') return res.json({ ok: false, reason: 'The game is not running.' });
+  res.json({ ok: true });
+});
+
 // ---------------------------------------------------------------- websockets
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
 
 server.on('upgrade', (req, socket, head) => {
-  const reject = (code) => { socket.write(`HTTP/1.1 ${code}\r\n\r\n`); socket.destroy(); };
+  const reject = (code, why) => {
+    if (why) console.warn(`Refused a game connection: ${why}`);
+    socket.write(`HTTP/1.1 ${code}\r\n\r\n`);
+    socket.destroy();
+  };
   const { pathname } = new URL(req.url, 'http://x');
   if (pathname !== '/ws/video' && pathname !== '/ws/input') return reject('404 Not Found');
-  // Block cross-site WebSocket hijacking: only our own pages may connect
-  if (req.headers.origin !== config.baseUrl) return reject('403 Forbidden');
+  if (!originAllowed(req)) {
+    return reject('403 Forbidden', `page address ${req.headers.origin} doesn't match ${config.baseUrl} (host ${req.headers.host})`);
+  }
 
   sessionParser(req, {}, () => {
     const account = currentAccount(req);
     const game = account && games.get(account.profile.id);
-    if (!game || game.state !== 'running') return reject('409 Conflict');
+    if (!game || game.state !== 'running') return reject('409 Conflict', account ? 'the game is not running' : 'not signed in');
     wss.handleUpgrade(req, socket, head, (ws) => {
       if (pathname === '/ws/video') {
         game.attachVideo(ws);

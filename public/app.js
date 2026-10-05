@@ -282,10 +282,14 @@ function onVideoClosed(ev) {
   if (!game) return;
   leaveGame();
   // 4000/4001 are our own "opened elsewhere" / "game ended" closes
-  if (ev && ev.code !== 4000 && ev.code !== 4001) {
-    rejoinByHand = true; // don't loop straight back into a broken stream
-    showError($('lobbyError'), `The video connection closed (code ${ev.code}${ev.reason ? `: ${ev.reason}` : ''}). Press Play to reconnect.`);
-  }
+  if (ev?.code === 4000 || ev?.code === 4001) return;
+  rejoinByHand = true; // don't loop straight back into a broken stream
+  const code = ev?.code ? ` (code ${ev.code}${ev.reason ? `: ${ev.reason}` : ''})` : '';
+  showError($('lobbyError'), `The video connection closed${code}. Press Play to reconnect.`);
+  // Ask the server why, so the message says what to fix
+  api('/api/stream-check', { method: 'POST' }).then((r) => {
+    if (!r.ok && r.reason) showError($('lobbyError'), `The video connection was refused: ${r.reason}`);
+  }).catch(() => {});
 }
 
 function leaveGame() {

@@ -18,6 +18,7 @@ const baseUrl = (process.env.BASE_URL || codespaceUrl || `http://localhost:${int
 const config = {
   port: int('PORT', 3000),
   baseUrl,
+  codespaceUrl,
   secureCookies: baseUrl.startsWith('https://'),
   trustProxy: process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true' || (!process.env.TRUST_PROXY && !!codespaceUrl),
   // Without a fixed secret, sign-ins simply don't survive a server restart
