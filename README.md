@@ -24,7 +24,28 @@ The sign-in flow, the streaming pipeline and input injection were tested end-to-
 3. Put the **Application (client) ID** and secret in `.env` as `MS_CLIENT_ID` / `MS_CLIENT_SECRET`.
 4. **Ask Mojang to approve your app for Minecraft:** <https://aka.ms/mce-reviewappid>. Until they approve it, sign-in fails with "Invalid app registration". Mojang requires this for every new third-party app.
 
-## Running
+## Run it free on GitHub Codespaces (no VPS)
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/gceoalexyt-ops/Mcplayerweb/tree/claude/stoic-hopper-nqwz0j?quickstart=1)
+
+1. Do the **Azure setup** below. You can leave the redirect URI blank for now.
+2. Click the badge. When GitHub asks for `MS_CLIENT_ID` and `MS_CLIENT_SECRET`, paste the values from Azure. They're saved as Codespaces secrets (github.com/settings/codespaces).
+3. Wait for setup to finish. The server starts by itself and prints two lines:
+   ```
+   Minecraft web player is running: https://<your-codespace>-3000.app.github.dev
+   Azure redirect URI must be:      https://<your-codespace>-3000.app.github.dev/auth/callback
+   ```
+4. In Azure → your app → **Authentication**, add that redirect URI (platform **Web**).
+5. Open the `…app.github.dev` link (the **Ports** tab, port 3000), sign in and press **Play**.
+
+Things to know about Codespaces:
+- GitHub's free plan covers 120 core-hours a month. This project uses a 4-core machine, so that's about **30 hours of play a month**.
+- Codespaces stop after 30 minutes without editor activity by default. Raise the idle timeout (up to 4 hours) at github.com/settings/codespaces.
+- When you're done, stop the codespace (github.com/codespaces → … → Stop) so it doesn't use your hours. Worlds are kept in the codespace until you delete it.
+- There's no GPU, so the game runs at 1024×576 with modest frame rates.
+- The port is private by default, so only you (signed in to GitHub) can open the site.
+
+## Running on your own server
 
 ```bash
 cp .env.example .env      # fill in BASE_URL, SESSION_SECRET, MS_CLIENT_ID, MS_CLIENT_SECRET

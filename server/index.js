@@ -159,7 +159,8 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(config.port, () => {
-  console.log(`Minecraft web player listening on ${config.baseUrl} (port ${config.port})`);
+  console.log(`\nMinecraft web player is running: ${config.baseUrl}`);
+  console.log(`Azure redirect URI must be:      ${config.msRedirectUri}\n`);
 });
 
 async function shutdown() {

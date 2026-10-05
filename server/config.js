@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
 
 function int(name, fallback) {
@@ -8,14 +9,19 @@ function int(name, fallback) {
   return Number.isFinite(v) ? v : fallback;
 }
 
-const baseUrl = (process.env.BASE_URL || `http://localhost:${int('PORT', 3000)}`).replace(/\/+$/, '');
+// In GitHub Codespaces the site is reached through GitHub's HTTPS port forwarding
+const codespaceUrl = process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN
+  ? `https://${process.env.CODESPACE_NAME}-${int('PORT', 3000)}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`
+  : null;
+const baseUrl = (process.env.BASE_URL || codespaceUrl || `http://localhost:${int('PORT', 3000)}`).replace(/\/+$/, '');
 
 const config = {
   port: int('PORT', 3000),
   baseUrl,
   secureCookies: baseUrl.startsWith('https://'),
-  trustProxy: process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true',
-  sessionSecret: process.env.SESSION_SECRET,
+  trustProxy: process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true' || (!process.env.TRUST_PROXY && !!codespaceUrl),
+  // Without a fixed secret, sign-ins simply don't survive a server restart
+  sessionSecret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
 
   // Azure app registration (https://portal.azure.com -> App registrations)
   msClientId: process.env.MS_CLIENT_ID,
@@ -42,10 +48,11 @@ const config = {
 function assertConfigured() {
   const missing = [];
   if (!config.msClientId) missing.push('MS_CLIENT_ID');
-  if (!config.sessionSecret) missing.push('SESSION_SECRET');
   if (missing.length) {
     console.error(`Missing required environment variables: ${missing.join(', ')}`);
-    console.error('Copy .env.example to .env and fill it in (see README.md).');
+    console.error(codespaceUrl
+      ? 'Add them as Codespaces secrets (github.com/settings/codespaces), then rebuild/restart the codespace. See README.md.'
+      : 'Copy .env.example to .env and fill it in (see README.md).');
     process.exit(1);
   }
 }
