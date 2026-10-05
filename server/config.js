@@ -23,8 +23,9 @@ const config = {
   // Without a fixed secret, sign-ins simply don't survive a server restart
   sessionSecret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
 
-  // Azure app registration (https://portal.azure.com -> App registrations)
-  msClientId: process.env.MS_CLIENT_ID,
+  // Optional Azure app registration (https://portal.azure.com -> App registrations).
+  // Without one, players sign in with a code at microsoft.com/link instead.
+  msClientId: process.env.MS_CLIENT_ID || '',
   msClientSecret: process.env.MS_CLIENT_SECRET || '',
   msRedirectUri: `${baseUrl}/auth/callback`,
 
@@ -45,16 +46,4 @@ const config = {
   displayBase: int('DISPLAY_BASE', 100),
 };
 
-function assertConfigured() {
-  const missing = [];
-  if (!config.msClientId) missing.push('MS_CLIENT_ID');
-  if (missing.length) {
-    console.error(`Missing required environment variables: ${missing.join(', ')}`);
-    console.error(codespaceUrl
-      ? 'Add them as Codespaces secrets (github.com/settings/codespaces), then rebuild/restart the codespace. See README.md.'
-      : 'Copy .env.example to .env and fill it in (see README.md).');
-    process.exit(1);
-  }
-}
-
-module.exports = { config, assertConfigured };
+module.exports = { config };

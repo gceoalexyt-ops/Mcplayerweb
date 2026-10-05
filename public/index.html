@@ -23,10 +23,17 @@
       <div class="card hero">
         <h1>Play Minecraft: Java Edition in your browser</h1>
         <p>Sign in with the Microsoft account that owns Minecraft. The real, official game runs on this server and streams to you. Your worlds, settings and multiplayer servers work like normal.</p>
-        <a class="btn ms" href="/auth/login">
+        <a class="btn ms" id="loginBtn" href="/auth/login">
           <svg viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
           Sign in with Microsoft
         </a>
+        <div id="deviceBox" class="device" hidden>
+          <p>1. Open <a id="deviceLink" href="https://www.microsoft.com/link" target="_blank" rel="noopener">microsoft.com/link</a> and sign in with the Microsoft account that owns Minecraft.</p>
+          <p>2. Enter this code:</p>
+          <div class="device-code"><code id="deviceCode"></code><button class="btn ghost small" id="copyCodeBtn" type="button">Copy</button></div>
+          <p class="muted" id="deviceStatus">Waiting for you to finish signing in…</p>
+          <button class="btn ghost small" id="deviceCancelBtn" type="button">Cancel</button>
+        </div>
         <p id="loginError" class="error" hidden></p>
         <p class="fine">You need to own Minecraft: Java Edition. Ownership is checked with Mojang when you sign in. Your password goes straight to Microsoft and never reaches this site.</p>
       </div>

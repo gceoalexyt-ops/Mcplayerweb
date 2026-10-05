@@ -10,7 +10,7 @@ async function api(path, opts = {}) {
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status, data });
   return data;
 }
 
@@ -34,7 +34,8 @@ async function boot() {
 
   try {
     me = await api('/api/me');
-  } catch {
+  } catch (err) {
+    loginMode = err.data?.loginMode || 'device';
     showError($('loginError'), loginError);
     show('loginView');
     return;
@@ -48,6 +49,63 @@ async function boot() {
   loadVersions();
   pollGame();
 }
+
+// ------------------------------------------------------------------ sign-in
+
+let loginMode = 'device';
+let devicePoll = null;
+
+function stopDeviceLogin() {
+  clearTimeout(devicePoll);
+  devicePoll = null;
+  $('deviceBox').hidden = true;
+  $('loginBtn').hidden = false;
+}
+
+// Without an Azure app the server uses Microsoft's device code sign-in: show
+// the code, let the player enter it at microsoft.com/link, and poll until done.
+$('loginBtn').onclick = async (e) => {
+  if (loginMode !== 'device') return; // plain link to the redirect flow
+  e.preventDefault();
+  showError($('loginError'), '');
+  $('loginBtn').hidden = true;
+  try {
+    const d = await api('/auth/device/start', { method: 'POST' });
+    $('deviceCode').textContent = d.userCode;
+    $('deviceLink').href = d.verificationUri;
+    $('deviceLink').textContent = d.verificationUri.replace(/^https?:\/\/(www\.)?/, '');
+    $('deviceStatus').textContent = 'Waiting for you to finish signing in…';
+    $('deviceBox').hidden = false;
+    const poll = async () => {
+      try {
+        const r = await api('/auth/device/poll', { method: 'POST' });
+        if (r.ok) {
+          $('deviceStatus').textContent = 'Signed in!';
+          location.href = '/';
+          return;
+        }
+        devicePoll = setTimeout(poll, d.interval * 1000);
+      } catch (err) {
+        stopDeviceLogin();
+        showError($('loginError'), err.message);
+      }
+    };
+    devicePoll = setTimeout(poll, d.interval * 1000);
+  } catch (err) {
+    stopDeviceLogin();
+    showError($('loginError'), err.message);
+  }
+};
+
+$('deviceCancelBtn').onclick = stopDeviceLogin;
+
+$('copyCodeBtn').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($('deviceCode').textContent);
+    $('copyCodeBtn').textContent = 'Copied';
+    setTimeout(() => { $('copyCodeBtn').textContent = 'Copy'; }, 1500);
+  } catch { /* clipboard blocked: the code is still on screen */ }
+};
 
 $('logoutBtn').onclick = async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});

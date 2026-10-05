@@ -6,12 +6,10 @@ const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const { WebSocketServer } = require('ws');
-const { config, assertConfigured } = require('./config');
+const { config } = require('./config');
 const auth = require('./auth');
 const launcher = require('./launcher');
 const { SessionManager } = require('./session');
-
-assertConfigured();
 
 const app = express();
 if (config.trustProxy) app.set('trust proxy', 1);
@@ -45,7 +43,66 @@ function requireAccount(req, res, next) {
 
 // ---------------------------------------------------------------- auth routes
 
+// Signs the browser session in as a verified Minecraft account.
+function signIn(req, ms, mc, flow) {
+  accounts.set(mc.profile.id, {
+    profile: mc.profile,
+    mcAccessToken: mc.mcAccessToken,
+    mcExpiresAt: mc.mcExpiresAt,
+    msRefreshToken: ms.refreshToken,
+    msFlow: flow,
+  });
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) return reject(new Error('Could not start a session.'));
+      req.session.uuid = mc.profile.id;
+      resolve();
+    });
+  });
+}
+
+// Device code sign-in (no Azure app needed): the page shows a code, the player
+// enters it at microsoft.com/link, and the page polls until they're done.
+app.post('/auth/device/start', async (req, res) => {
+  try {
+    const d = await auth.startDeviceLogin();
+    req.session.device = { deviceCode: d.deviceCode, interval: d.interval, expiresAt: d.expiresAt, nextPoll: 0 };
+    res.json({ userCode: d.userCode, verificationUri: d.verificationUri, interval: d.interval });
+  } catch (err) {
+    console.error('Sign-in failed:', err.message);
+    res.status(502).json({ error: err instanceof auth.AuthError ? err.message : 'Could not reach Microsoft.' });
+  }
+});
+
+app.post('/auth/device/poll', async (req, res) => {
+  const d = req.session.device;
+  if (!d || Date.now() > d.expiresAt) {
+    delete req.session.device;
+    return res.status(410).json({ error: 'The sign-in code expired. Please try again.' });
+  }
+  // Never poll Microsoft faster than it asked, however often the page calls us
+  if (Date.now() < d.nextPoll) return res.json({ pending: true });
+  d.nextPoll = Date.now() + d.interval * 1000 - 500;
+  try {
+    const ms = await auth.pollDeviceLogin(d.deviceCode);
+    if (!ms || ms.slowDown) {
+      if (ms?.slowDown) d.interval += 5;
+      return res.json({ pending: true });
+    }
+    delete req.session.device;
+    const mc = await auth.loginWithMicrosoftToken(ms.accessToken, 'live');
+    await signIn(req, ms, mc, 'live');
+    res.json({ ok: true });
+  } catch (err) {
+    delete req.session.device;
+    console.error('Sign-in failed:', err.message);
+    res.status(400).json({ error: err instanceof auth.AuthError ? err.message : 'Sign-in failed. Please try again.' });
+  }
+});
+
+// Redirect sign-in through your own Azure app (only when MS_CLIENT_ID is set)
 app.get('/auth/login', (req, res) => {
+  if (!config.msClientId) return res.redirect('/');
   const state = crypto.randomBytes(16).toString('hex');
   const pkce = auth.createPkce();
   req.session.oauth = { state, verifier: pkce.verifier };
@@ -60,18 +117,9 @@ app.get('/auth/callback', async (req, res) => {
   if (!pending || !req.query.code || req.query.state !== pending.state) return fail('Sign-in expired, please try again.');
   try {
     const ms = await auth.redeemCode(String(req.query.code), pending.verifier);
-    const mc = await auth.loginWithMicrosoftToken(ms.accessToken);
-    accounts.set(mc.profile.id, {
-      profile: mc.profile,
-      mcAccessToken: mc.mcAccessToken,
-      mcExpiresAt: mc.mcExpiresAt,
-      msRefreshToken: ms.refreshToken,
-    });
-    req.session.regenerate((err) => {
-      if (err) return fail('Could not start a session.');
-      req.session.uuid = mc.profile.id;
-      res.redirect('/');
-    });
+    const mc = await auth.loginWithMicrosoftToken(ms.accessToken, 'azure');
+    await signIn(req, ms, mc, 'azure');
+    res.redirect('/');
   } catch (err) {
     console.error('Sign-in failed:', err.message);
     fail(err instanceof auth.AuthError ? err.message : 'Sign-in failed. Please try again.');
@@ -90,7 +138,7 @@ app.post('/auth/logout', (req, res) => {
 
 app.get('/api/me', (req, res) => {
   const account = currentAccount(req);
-  if (!account) return res.status(401).json({ error: 'Not signed in' });
+  if (!account) return res.status(401).json({ error: 'Not signed in', loginMode: config.msClientId ? 'redirect' : 'device' });
   res.json({ id: account.profile.id, name: account.profile.name, skinUrl: account.profile.skinUrl });
 });
 
@@ -160,7 +208,8 @@ server.on('upgrade', (req, socket, head) => {
 
 server.listen(config.port, () => {
   console.log(`\nMinecraft web player is running: ${config.baseUrl}`);
-  console.log(`Azure redirect URI must be:      ${config.msRedirectUri}\n`);
+  if (config.msClientId) console.log(`Azure redirect URI must be:      ${config.msRedirectUri}`);
+  console.log('');
 });
 
 async function shutdown() {

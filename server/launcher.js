@@ -312,7 +312,7 @@ function buildCommand(plan, { account, gameDir, width, height }) {
     auth_access_token: account.mcAccessToken,
     auth_session: `token:${account.mcAccessToken}:${account.profile.id}`,
     auth_xuid: '0',
-    clientid: config.msClientId,
+    clientid: config.msClientId || '',
     user_type: 'msa',
     user_properties: '{}',
     version_name: version.id,

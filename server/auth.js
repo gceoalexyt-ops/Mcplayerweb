@@ -11,6 +11,14 @@ const MS_AUTHORIZE = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/au
 const MS_TOKEN = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
 const MS_SCOPE = 'XboxLive.signin offline_access';
 
+// Without an Azure app of our own, sign-in uses Microsoft's device code flow
+// with the public client ID of Microsoft's own Minecraft/Xbox app (the same one
+// tools like prismarine-auth use). The player signs in at microsoft.com/link.
+const LIVE_CLIENT_ID = '000000004C12AE6F';
+const LIVE_SCOPE = 'service::user.auth.xboxlive.com::MBI_SSL';
+const LIVE_DEVICE = 'https://login.live.com/oauth20_connect.srf';
+const LIVE_TOKEN = 'https://login.live.com/oauth20_token.srf';
+
 class AuthError extends Error {
   constructor(message, code) {
     super(message);
@@ -88,18 +96,73 @@ function redeemCode(code, codeVerifier) {
   return msToken({ grant_type: 'authorization_code', code, code_verifier: codeVerifier });
 }
 
-function refreshMicrosoft(refreshToken) {
-  return msToken({ grant_type: 'refresh_token', refresh_token: refreshToken });
+async function liveToken(params) {
+  const res = await fetch(LIVE_TOKEN, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: LIVE_CLIENT_ID, ...params }),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { res, data };
 }
 
-async function xboxLive(msAccessToken) {
-  const { res, data } = await postJson('https://user.auth.xboxlive.com/user/authenticate', {
-    Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `d=${msAccessToken}` },
-    RelyingParty: 'http://auth.xboxlive.com',
-    TokenType: 'JWT',
-  }, { 'x-xbl-contract-version': '1' });
-  if (!res.ok || !data?.Token) throw new AuthError(`Xbox Live sign-in failed (${res.status}).`, 'xbl');
-  return { token: data.Token, uhs: data.DisplayClaims.xui[0].uhs };
+// Step 1 of a device code sign-in: a short code the player enters at microsoft.com/link.
+async function startDeviceLogin() {
+  const res = await fetch(LIVE_DEVICE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: LIVE_CLIENT_ID, scope: LIVE_SCOPE, response_type: 'device_code' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.device_code) {
+    throw new AuthError(`Could not start Microsoft sign-in: ${data.error_description || data.error || res.status}`, 'device');
+  }
+  return {
+    deviceCode: data.device_code,
+    userCode: data.user_code,
+    verificationUri: data.verification_uri,
+    interval: data.interval || 5,
+    expiresAt: Date.now() + (data.expires_in || 900) * 1000,
+  };
+}
+
+// Step 2: returns null while the player hasn't finished signing in yet, or
+// { slowDown: true } when Microsoft asks us to poll less often.
+async function pollDeviceLogin(deviceCode) {
+  const { res, data } = await liveToken({ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: deviceCode });
+  if (res.ok && data.access_token) return { accessToken: data.access_token, refreshToken: data.refresh_token };
+  if (data.error === 'authorization_pending') return null;
+  if (data.error === 'slow_down') return { slowDown: true };
+  if (data.error === 'expired_token') throw new AuthError('The sign-in code expired. Please try again.', 'expired');
+  if (data.error === 'authorization_declined' || data.error === 'access_denied') {
+    throw new AuthError('Sign-in was cancelled.', 'declined');
+  }
+  throw new AuthError(`Microsoft sign-in failed: ${data.error_description || data.error || res.status}`, 'ms_token');
+}
+
+async function refreshMicrosoft(refreshToken, flow) {
+  if (flow !== 'live') return msToken({ grant_type: 'refresh_token', refresh_token: refreshToken });
+  const { res, data } = await liveToken({ grant_type: 'refresh_token', scope: LIVE_SCOPE, refresh_token: refreshToken });
+  if (!res.ok || !data.access_token) throw new AuthError('Session expired, please sign in again.', 'expired');
+  return { accessToken: data.access_token, refreshToken: data.refresh_token };
+}
+
+async function xboxLive(msAccessToken, flow) {
+  // Azure (MSAL) tokens are sent as "d=", login.live.com tokens as "t=";
+  // if Xbox Live rejects one form, try the other before giving up.
+  const prefixes = flow === 'live' ? ['t', 'd'] : ['d', 't'];
+  let status = 0;
+  for (const prefix of prefixes) {
+    const { res, data } = await postJson('https://user.auth.xboxlive.com/user/authenticate', {
+      Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `${prefix}=${msAccessToken}` },
+      RelyingParty: 'http://auth.xboxlive.com',
+      TokenType: 'JWT',
+    }, { 'x-xbl-contract-version': '1' });
+    if (res.ok && data?.Token) return { token: data.Token, uhs: data.DisplayClaims.xui[0].uhs };
+    status = res.status;
+    if (res.status !== 400 && res.status !== 401) break;
+  }
+  throw new AuthError(`Xbox Live sign-in failed (${status}).`, 'xbl');
 }
 
 async function xsts(xblToken) {
@@ -147,8 +210,9 @@ async function minecraftProfile(mcAccessToken) {
 }
 
 // Full chain from a Microsoft access token to a verified Minecraft account.
-async function loginWithMicrosoftToken(msAccessToken) {
-  const xbl = await xboxLive(msAccessToken);
+// `flow` is 'live' for device code sign-ins and 'azure' for the redirect flow.
+async function loginWithMicrosoftToken(msAccessToken, flow = 'azure') {
+  const xbl = await xboxLive(msAccessToken, flow);
   const x = await xsts(xbl.token);
   const mc = await minecraftLogin(x.uhs, x.token);
   const profile = await minecraftProfile(mc.accessToken);
@@ -160,8 +224,8 @@ async function loginWithMicrosoftToken(msAccessToken) {
 async function ensureFreshToken(account) {
   if (account.mcExpiresAt - Date.now() > 60 * 60 * 1000) return account;
   if (!account.msRefreshToken) throw new AuthError('Session expired, please sign in again.', 'expired');
-  const ms = await refreshMicrosoft(account.msRefreshToken);
-  const result = await loginWithMicrosoftToken(ms.accessToken);
+  const ms = await refreshMicrosoft(account.msRefreshToken, account.msFlow);
+  const result = await loginWithMicrosoftToken(ms.accessToken, account.msFlow);
   account.msRefreshToken = ms.refreshToken || account.msRefreshToken;
   account.mcAccessToken = result.mcAccessToken;
   account.mcExpiresAt = result.mcExpiresAt;
@@ -174,6 +238,8 @@ module.exports = {
   createPkce,
   authorizeUrl,
   redeemCode,
+  startDeviceLogin,
+  pollDeviceLogin,
   loginWithMicrosoftToken,
   ensureFreshToken,
 };

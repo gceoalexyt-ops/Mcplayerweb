@@ -1,16 +1,9 @@
 {
   "name": "Minecraft Web Player",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
-  "hostRequirements": { "cpus": 4, "memory": "8gb" },
-  "secrets": {
-    "MS_CLIENT_ID": {
-      "description": "Application (client) ID of your Azure app registration",
-      "documentationUrl": "https://github.com/gceoalexyt-ops/Mcplayerweb#microsoft--azure-setup-required"
-    },
-    "MS_CLIENT_SECRET": {
-      "description": "Client secret of your Azure app registration",
-      "documentationUrl": "https://github.com/gceoalexyt-ops/Mcplayerweb#microsoft--azure-setup-required"
-    }
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb"
   },
   "containerEnv": {
     "SCREEN_WIDTH": "1024",
@@ -21,8 +14,13 @@
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "postAttachCommand": "npm start",
-  "forwardPorts": [3000],
+  "forwardPorts": [
+    3000
+  ],
   "portsAttributes": {
-    "3000": { "label": "Minecraft", "onAutoForward": "openBrowser" }
+    "3000": {
+      "label": "Minecraft",
+      "onAutoForward": "openBrowser"
+    }
   }
 }
