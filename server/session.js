@@ -25,9 +25,6 @@ const DEFAULT_OPTIONS = [
   'enableVsync:false',
   'maxFps:60',
   'inactivityFpsLimit:"minimized"',
-  'renderDistance:8',
-  'simulationDistance:8',
-  'graphicsPreset:"fast"', // 26.1+
   'graphicsMode:0', // 1.19 - 1.21
   'fancyGraphics:false', // before 1.19
   // 26.1+ renders through SDL3, which asks for an sRGB OpenGL framebuffer that
@@ -37,6 +34,23 @@ const DEFAULT_OPTIONS = [
   'tutorialStep:none',
   'skipMultiplayerWarning:true',
 ];
+
+// Settings that matter most for frame rate when the CPU does the rendering.
+// Bump OPTIONS_VERSION to apply a changed set once to existing players too;
+// anything they change in-game afterwards is kept.
+const PERFORMANCE_OPTIONS = [
+  'renderDistance:6',
+  'simulationDistance:5',
+  'graphicsPreset:"fast"', // 26.1+
+  'renderClouds:"false"',
+  'ao:false',
+  'entityShadows:false',
+  'biomeBlendRadius:0',
+  'mipmapLevels:0',
+  'particles:1',
+  'entityDistanceScaling:0.75',
+];
+const OPTIONS_VERSION = 2;
 
 function killTree(child, signal = 'SIGTERM') {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
@@ -172,7 +186,18 @@ class PlayerSession extends EventEmitter {
   async writeDefaultOptions() {
     await fsp.mkdir(this.gameDir, { recursive: true });
     const file = path.join(this.gameDir, 'options.txt');
-    if (!fs.existsSync(file)) await fsp.writeFile(file, `${DEFAULT_OPTIONS.join('\n')}\n`);
+    const marker = path.join(this.gameDir, '.mcweb-options');
+    const applied = parseInt(await fsp.readFile(marker, 'utf8').catch(() => '0'), 10) || 0;
+    if (applied >= OPTIONS_VERSION && fs.existsSync(file)) return;
+
+    // Set our keys, keep every other line the game wrote
+    const existing = fs.existsSync(file) ? (await fsp.readFile(file, 'utf8')).split('\n').filter(Boolean) : [];
+    const wanted = existing.length ? PERFORMANCE_OPTIONS : [...DEFAULT_OPTIONS, ...PERFORMANCE_OPTIONS];
+    const keyOf = (line) => line.slice(0, line.indexOf(':'));
+    const wantedKeys = new Set(wanted.map(keyOf));
+    const lines = [...existing.filter((l) => !wantedKeys.has(keyOf(l))), ...wanted];
+    await fsp.writeFile(file, `${lines.join('\n')}\n`);
+    await fsp.writeFile(marker, String(OPTIONS_VERSION));
   }
 
   async startDisplay() {
@@ -224,7 +249,8 @@ class PlayerSession extends EventEmitter {
       '-fflags', 'nobuffer', '-thread_queue_size', '64',
       '-f', 'x11grab', '-draw_mouse', '1', '-framerate', String(fps), '-video_size', `${w}x${h}`, '-i', `${this.display}.0`,
     ];
-    if (audio) args.push('-thread_queue_size', '64', '-f', 'pulse', '-i', 'game.monitor');
+    // Small audio chunks (10 ms) so the muxer doesn't hold video back waiting for audio
+    if (audio) args.push('-thread_queue_size', '64', '-f', 'pulse', '-fragment_size', '1920', '-i', 'game.monitor');
     args.push(
       '-map', '0:v',
       '-f', 'mpegts',
@@ -240,9 +266,12 @@ class PlayerSession extends EventEmitter {
       env: { PATH: process.env.PATH, HOME: this.runDir, PULSE_SERVER: `unix:${this.pulseSocket}` },
     });
     this.ffmpeg = ff;
+    // When the viewer's connection can't keep up, skip video instead of letting
+    // it queue: never more than about half a second waits to be sent. The
+    // picture glitches briefly until the next keyframe, but stays live.
+    const maxQueued = Math.max(64 * 1024, (kbps * 1000 / 8) * 0.5);
     ff.stdout.on('data', (chunk) => {
-      // Drop data rather than build up latency when the viewer's link is slow
-      if (ws.readyState === 1 && ws.bufferedAmount < 2 * 1024 * 1024) ws.send(chunk);
+      if (ws.readyState === 1 && ws.bufferedAmount < maxQueued) ws.send(chunk);
     });
     ff.stderr.on('data', (d) => this.log(`[stream] ${d}`));
     ff.on('exit', () => { if (this.ffmpeg === ff) this.ffmpeg = null; });

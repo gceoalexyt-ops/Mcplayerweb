@@ -39,7 +39,7 @@ const config = {
   screenWidth: int('SCREEN_WIDTH', 1280),
   screenHeight: int('SCREEN_HEIGHT', 720),
   fps: int('STREAM_FPS', 30),
-  videoBitrateKbps: int('VIDEO_BITRATE_KBPS', 4000),
+  videoBitrateKbps: int('VIDEO_BITRATE_KBPS', 2500),
   audio: process.env.AUDIO !== '0',
 
   javaPath: process.env.JAVA_PATH || '', // empty = download Mojang's bundled runtime

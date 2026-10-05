@@ -6,9 +6,9 @@
     "memory": "8gb"
   },
   "containerEnv": {
-    "SCREEN_WIDTH": "1024",
-    "SCREEN_HEIGHT": "576",
-    "VIDEO_BITRATE_KBPS": "3000",
+    "SCREEN_WIDTH": "854",
+    "SCREEN_HEIGHT": "480",
+    "VIDEO_BITRATE_KBPS": "1800",
     "MC_MAX_MEMORY_MB": "2560",
     "MAX_SESSIONS": "1"
   },
