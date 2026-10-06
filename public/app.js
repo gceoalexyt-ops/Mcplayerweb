@@ -567,39 +567,35 @@ for (const el of touchLayer.querySelectorAll('[data-mouse]')) {
   const button = Number(el.dataset.mouse);
   bindHold(el, () => { el.classList.add('on'); send(['b', button, 1]); }, () => { el.classList.remove('on'); send(['b', button, 0]); });
 }
-// Hit: hold to keep hitting/mining. Double-tap turns on auto-hit, which
-// swings every 0.6 s (a fully recharged sword in Java Edition); tap to stop.
+// Hit: hold to keep hitting/mining. Double-tap latches the button down
+// ("Held") so you don't have to keep your finger on it; tap to let go.
 const hitBtn = $('tcHit');
-const AUTO_HIT_MS = 600;
-let autoHitTimer = null;
+let hitLatched = false;
 let lastHitTap = 0;
 let hitHeld = false;
 
 function startAutoHit() {
   stopAutoHit();
+  hitLatched = true;
   hitBtn.classList.add('on');
-  hitBtn.textContent = 'Auto';
-  const swing = () => {
-    send(['b', 0, 1]);
-    setTimeout(() => send(['b', 0, 0]), 50);
-  };
-  swing();
-  autoHitTimer = setInterval(swing, AUTO_HIT_MS);
+  hitBtn.textContent = 'Held';
+  send(['b', 0, 1]);
 }
 
 function stopAutoHit() {
-  if (!autoHitTimer) return;
-  clearInterval(autoHitTimer);
-  autoHitTimer = null;
+  if (!hitLatched) return;
+  hitLatched = false;
+  send(['b', 0, 0]);
   hitBtn.classList.remove('on');
   hitBtn.textContent = 'Hit';
 }
 
 bindHold(hitBtn, () => {
-  if (autoHitTimer) { stopAutoHit(); return; }
+  if (hitLatched) { stopAutoHit(); return; }
   const now = performance.now();
   if (now - lastHitTap < 350) {
     lastHitTap = 0;
+    hitHeld = false; // the latch takes over this press
     startAutoHit();
     return;
   }
@@ -610,7 +606,7 @@ bindHold(hitBtn, () => {
 }, () => {
   if (!hitHeld) return;
   hitHeld = false;
-  if (!autoHitTimer) hitBtn.classList.remove('on');
+  if (!hitLatched) hitBtn.classList.remove('on');
   send(['b', 0, 0]);
 });
 
