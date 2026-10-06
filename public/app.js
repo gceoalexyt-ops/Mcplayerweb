@@ -114,10 +114,22 @@ $('logoutBtn').onclick = async () => {
 
 // ------------------------------------------------------------------ lobby
 
+let baritoneVersions = new Set();
+
+// Baritone is offered only for versions it has a build for
+function updateBaritoneRow() {
+  $('baritoneRow').hidden = !baritoneVersions.has($('versionSelect').value);
+}
+$('versionSelect').addEventListener('change', updateBaritoneRow);
+$('baritoneBox').addEventListener('change', () => {
+  try { localStorage.setItem('mcweb.baritone', $('baritoneBox').checked ? '1' : '0'); } catch { /* private mode */ }
+});
+
 async function loadVersions() {
   const select = $('versionSelect');
   try {
-    const { latest, versions } = await api('/api/versions');
+    const { latest, versions, baritone } = await api('/api/versions');
+    baritoneVersions = new Set(baritone || []);
     select.innerHTML = '';
     for (const v of versions) {
       const opt = document.createElement('option');
@@ -127,6 +139,8 @@ async function loadVersions() {
     }
     const saved = localStorage.getItem('mcweb.version');
     select.value = versions.includes(saved) ? saved : latest;
+    try { $('baritoneBox').checked = localStorage.getItem('mcweb.baritone') !== '0'; } catch { /* private mode */ }
+    updateBaritoneRow();
     $('playBtn').disabled = false;
   } catch (err) {
     showError($('lobbyError'), err.message);
@@ -140,7 +154,7 @@ $('playBtn').onclick = async () => {
   rejoinByHand = false;
   $('playBtn').disabled = true;
   try {
-    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version }) }));
+    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, baritone: $('baritoneBox').checked }) }));
     pollGame();
   } catch (err) {
     showError($('lobbyError'), err.message);
@@ -226,7 +240,7 @@ function enterGame(status) {
   show('gameView');
   canvas.width = status.width;
   canvas.height = status.height;
-  $('gameInfo').textContent = `Minecraft ${status.version}${status.audio ? '' : ' · no audio'}`;
+  $('gameInfo').textContent = `Minecraft ${status.version}${status.mods ? ` · ${status.mods}` : ''}${status.audio ? '' : ' · no audio'}`;
   overlay.hidden = false;
 
   // Say what the video is doing until the first picture arrives, so a black

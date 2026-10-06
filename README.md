@@ -48,6 +48,10 @@ For anything beyond localhost, put it behind HTTPS (e.g. Caddy or nginx), set `B
 
 Without a GPU the game renders on the CPU (Mesa llvmpipe). Plan on ~4 cores and ~4 GB RAM per player for playable 720p. A GPU server is much smoother. Lower `SCREEN_WIDTH`/`SCREEN_HEIGHT` and the in-game render distance if it struggles.
 
+## Baritone
+
+[Baritone](https://github.com/cabaletta/baritone) (the pathfinding bot) comes preinstalled for every version it supports: 1.17–1.18.2, 1.19.2–1.19.4, 1.20–1.20.6, 1.21–1.21.11 and 26.1–26.3. Those versions launch through the Fabric mod loader with Baritone added. Type `#help` in chat to see its commands, e.g. `#goto x y z` or `#mine diamond_ore`. Untick **Baritone** in the lobby to play the plain game. Many multiplayer servers don't allow it, so check their rules.
+
 ## Controls
 
 - Click the game to capture the mouse. **Esc** releases it and opens the pause menu.

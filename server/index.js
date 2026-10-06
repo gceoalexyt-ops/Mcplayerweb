@@ -144,7 +144,7 @@ app.get('/api/me', (req, res) => {
 
 app.get('/api/versions', requireAccount, async (req, res) => {
   try {
-    res.json(await launcher.listReleases());
+    res.json({ ...(await launcher.listReleases()), baritone: launcher.baritoneVersions() });
   } catch (err) {
     res.status(502).json({ error: `Could not reach Mojang: ${err.message}` });
   }
@@ -155,7 +155,7 @@ app.post('/api/play', requireAccount, async (req, res) => {
   try {
     const { versions } = await launcher.listReleases();
     if (!versions.includes(version)) return res.status(400).json({ error: 'Pick a release version.' });
-    const game = games.start(req.account, version);
+    const game = games.start(req.account, version, { baritone: req.body?.baritone !== false });
     res.json(game.status());
   } catch (err) {
     res.status(409).json({ error: err.message });

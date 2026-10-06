@@ -10,17 +10,20 @@ const path = require('path');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 const { config } = require('./config');
+const baritoneMod = require('./baritone');
 
 const VERSION_MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const JAVA_RUNTIMES = 'https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json';
 const ASSET_BASE = 'https://resources.download.minecraft.net';
 const LIBRARY_BASE = 'https://libraries.minecraft.net';
+const FABRIC_META = 'https://meta.fabricmc.net/v2';
 
 const dirs = {
   versions: path.join(config.dataDir, 'versions'),
   libraries: path.join(config.dataDir, 'libraries'),
   assets: path.join(config.dataDir, 'assets'),
   runtimes: path.join(config.dataDir, 'runtimes'),
+  mods: path.join(config.dataDir, 'mods'),
 };
 
 // ---------------------------------------------------------------- helpers
@@ -266,10 +269,59 @@ async function ensureAssets(version, gameDir, onProgress) {
   return legacyDir;
 }
 
+// ---------------------------------------------------------------- fabric
+
+// The Fabric loader profile (newest stable loader) for a Minecraft version,
+// cached so later launches work without asking Fabric's servers again.
+async function loadFabricProfile(versionId) {
+  const cacheDir = path.join(dirs.versions, versionId, 'fabric');
+  const cached = path.join(cacheDir, 'profile.json');
+  try {
+    const loaders = await fetchJson(`${FABRIC_META}/versions/loader/${encodeURIComponent(versionId)}`);
+    const loader = (loaders.find((l) => l.loader.stable) || loaders[0])?.loader.version;
+    if (!loader) throw new Error(`Fabric does not support Minecraft ${versionId}`);
+    const profile = await fetchJson(`${FABRIC_META}/versions/loader/${encodeURIComponent(versionId)}/${encodeURIComponent(loader)}/profile/json`);
+    await fsp.mkdir(cacheDir, { recursive: true });
+    await fsp.writeFile(cached, JSON.stringify(profile));
+    return profile;
+  } catch (err) {
+    const old = await fsp.readFile(cached, 'utf8').catch(() => null);
+    if (old) return JSON.parse(old);
+    throw err;
+  }
+}
+
+// Fabric + Baritone for this version: libraries and mod jar to download, and
+// what to add to the launch command. Null when Baritone has no build for it.
+async function planBaritone(versionId) {
+  const mod = baritoneMod.forVersion(versionId);
+  if (!mod) return null;
+  const profile = await loadFabricProfile(versionId);
+  const libs = profile.libraries.map((l) => {
+    const rel = mavenPath(l.name);
+    return { name: l.name, url: `${l.url.replace(/\/?$/, '/')}${rel}`, file: path.join(dirs.libraries, rel), sha1: l.sha1, size: l.size };
+  });
+  const jar = { url: mod.url, file: path.join(dirs.mods, mod.file), sha1: mod.sha1 };
+  return {
+    label: `Baritone ${mod.version} (Fabric ${profile.id})`,
+    libs,
+    jar,
+    mainClass: profile.mainClass,
+    jvm: [...(profile.arguments?.jvm || []), `-Dfabric.addMods=${jar.file}`],
+    game: profile.arguments?.game || [],
+  };
+}
+
 // ---------------------------------------------------------------- public API
 
+// Versions that can be launched with Baritone preinstalled
+function baritoneVersions() {
+  return baritoneMod.supportedVersions;
+}
+
 // Downloads everything needed for `versionId` and returns a launch plan.
-async function prepare(versionId, gameDir, onProgress) {
+// With `baritone`, versions Baritone supports launch through Fabric with it.
+async function prepare(versionId, gameDir, onProgress, { baritone = false } = {}) {
   onProgress?.({ stage: 'Reading version manifest' });
   const version = await loadVersionJson(versionId);
   if (version.inheritsFrom) throw new Error('Only vanilla versions are supported.');
@@ -288,6 +340,12 @@ async function prepare(versionId, gameDir, onProgress) {
     logConfig = { file: path.join(dirs.assets, 'log_configs', f.id), argument: version.logging.client.argument };
     jobs.push({ url: f.url, file: logConfig.file, sha1: f.sha1, size: f.size });
   }
+  let mods = null;
+  if (baritone) {
+    onProgress?.({ stage: 'Setting up Fabric and Baritone' });
+    mods = await planBaritone(versionId);
+    if (mods) jobs.push(...mods.libs, mods.jar);
+  }
   let done = 0;
   await pool(jobs, 12, async (j) => {
     await download(j.url, j.file, j);
@@ -300,7 +358,13 @@ async function prepare(versionId, gameDir, onProgress) {
   await fsp.mkdir(gameDir, { recursive: true });
   const legacyAssetsDir = await ensureAssets(version, gameDir, onProgress);
 
-  return { version, javaPath, classpath: [...libs.classpath, clientJar], nativesDir, logConfig, legacyAssetsDir };
+  let classpath = [...libs.classpath, clientJar];
+  if (mods) {
+    // Fabric's own copies of shared libraries (e.g. ASM) replace the game's
+    const fabricDirs = mods.libs.map((l) => `${path.dirname(path.dirname(l.file))}${path.sep}`);
+    classpath = [...mods.libs.map((l) => l.file), ...classpath.filter((f) => !fabricDirs.some((d) => f.startsWith(d)))];
+  }
+  return { version, javaPath, classpath, nativesDir, logConfig, legacyAssetsDir, mods };
 }
 
 // Builds the java command line for a prepared version and a signed-in account.
@@ -355,8 +419,12 @@ function buildCommand(plan, { account, gameDir, width, height }) {
 
   const args = [`-Xmx${config.maxMemoryMb}M`, '-XX:+UseG1GC'];
   if (plan.logConfig) args.push(plan.logConfig.argument.replace('${path}', plan.logConfig.file));
-  args.push(...jvm, version.mainClass, ...game);
+  if (plan.mods) {
+    args.push(...jvm, ...plan.mods.jvm, plan.mods.mainClass, ...game, ...plan.mods.game);
+  } else {
+    args.push(...jvm, version.mainClass, ...game);
+  }
   return { command: plan.javaPath, args };
 }
 
-module.exports = { listReleases, prepare, buildCommand, rulesAllow, mavenPath };
+module.exports = { listReleases, prepare, buildCommand, baritoneVersions, rulesAllow, mavenPath };

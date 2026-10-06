@@ -75,11 +75,13 @@ async function waitFor(check, timeoutMs, what) {
 }
 
 class PlayerSession extends EventEmitter {
-  constructor({ account, versionId, displayNum }) {
+  constructor({ account, versionId, displayNum, baritone = false }) {
     super();
     this.account = account;
     this.uuid = account.profile.id;
     this.versionId = versionId;
+    this.baritone = baritone;
+    this.mods = null;
     this.displayNum = displayNum;
     this.display = `:${displayNum}`;
     this.runDir = path.join(config.runtimeDir, String(displayNum));
@@ -109,6 +111,7 @@ class PlayerSession extends EventEmitter {
     return {
       state: this.state,
       version: this.versionId,
+      mods: this.mods,
       progress: this.progress,
       error: this.error,
       audio: hasPulse,
@@ -131,7 +134,9 @@ class PlayerSession extends EventEmitter {
   async start() {
     try {
       this.armIdleTimer();
-      const plan = await launcher.prepare(this.versionId, this.gameDir, (p) => { this.progress = p; });
+      const plan = await launcher.prepare(this.versionId, this.gameDir, (p) => { this.progress = p; }, { baritone: this.baritone });
+      this.mods = plan.mods?.label || null;
+      if (this.mods) this.log(`[launcher] Starting with ${this.mods}`);
       if (this.stopping) return;
       this.progress = { stage: 'Checking your Minecraft session' };
       await ensureFreshToken(this.account);
@@ -374,7 +379,7 @@ class SessionManager {
     return n;
   }
 
-  start(account, versionId) {
+  start(account, versionId, { baritone = false } = {}) {
     const existing = this.get(account.profile.id);
     if (existing && !existing.stopping) return existing;
     if (existing && existing.state === 'stopping') throw new Error('Your previous game is still shutting down, try again in a few seconds.');
@@ -384,7 +389,7 @@ class SessionManager {
     while (this.usedDisplays.has(displayNum)) displayNum++;
     this.usedDisplays.add(displayNum);
 
-    const session = new PlayerSession({ account, versionId, displayNum });
+    const session = new PlayerSession({ account, versionId, displayNum, baritone });
     this.byUuid.set(account.profile.id, session);
     session.once('stopped', () => this.usedDisplays.delete(displayNum));
     session.start();
