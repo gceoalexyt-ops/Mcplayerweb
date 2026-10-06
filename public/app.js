@@ -431,6 +431,7 @@ function enableTouch() {
 
 function disableTouch() {
   if (!touchMode) return;
+  stopAutoHit();
   endGestures();
   setStick(0, 0);
   for (const el of touchLayer.querySelectorAll('.on')) el.classList.remove('on');
@@ -446,7 +447,10 @@ function setCaptured(value) {
   touchLayer.classList.toggle('captured', value);
   // Switching between menu and game mid-gesture: let go of everything
   endGestures();
-  if (!value) setStick(0, 0);
+  if (!value) {
+    setStick(0, 0);
+    stopAutoHit(); // never click around in menus
+  }
 }
 
 function tapKey(code, shift = false) {
@@ -563,6 +567,53 @@ for (const el of touchLayer.querySelectorAll('[data-mouse]')) {
   const button = Number(el.dataset.mouse);
   bindHold(el, () => { el.classList.add('on'); send(['b', button, 1]); }, () => { el.classList.remove('on'); send(['b', button, 0]); });
 }
+// Hit: hold to keep hitting/mining. Double-tap turns on auto-hit, which
+// swings every 0.6 s (a fully recharged sword in Java Edition); tap to stop.
+const hitBtn = $('tcHit');
+const AUTO_HIT_MS = 600;
+let autoHitTimer = null;
+let lastHitTap = 0;
+let hitHeld = false;
+
+function startAutoHit() {
+  stopAutoHit();
+  hitBtn.classList.add('on');
+  hitBtn.textContent = 'Auto';
+  const swing = () => {
+    send(['b', 0, 1]);
+    setTimeout(() => send(['b', 0, 0]), 50);
+  };
+  swing();
+  autoHitTimer = setInterval(swing, AUTO_HIT_MS);
+}
+
+function stopAutoHit() {
+  if (!autoHitTimer) return;
+  clearInterval(autoHitTimer);
+  autoHitTimer = null;
+  hitBtn.classList.remove('on');
+  hitBtn.textContent = 'Hit';
+}
+
+bindHold(hitBtn, () => {
+  if (autoHitTimer) { stopAutoHit(); return; }
+  const now = performance.now();
+  if (now - lastHitTap < 350) {
+    lastHitTap = 0;
+    startAutoHit();
+    return;
+  }
+  lastHitTap = now;
+  hitHeld = true;
+  hitBtn.classList.add('on');
+  send(['b', 0, 1]);
+}, () => {
+  if (!hitHeld) return;
+  hitHeld = false;
+  if (!autoHitTimer) hitBtn.classList.remove('on');
+  send(['b', 0, 0]);
+});
+
 for (const el of touchLayer.querySelectorAll('[data-wheel]')) {
   const steps = Number(el.dataset.wheel);
   bindHold(el, () => send(['w', steps]), () => {});
