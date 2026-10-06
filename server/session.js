@@ -39,7 +39,7 @@ const DEFAULT_OPTIONS = [
 // Bump OPTIONS_VERSION to apply a changed set once to existing players too;
 // anything they change in-game afterwards is kept.
 const PERFORMANCE_OPTIONS = [
-  'renderDistance:6',
+  'renderDistance:4',
   'simulationDistance:5',
   'graphicsPreset:"fast"', // 26.1+
   'renderClouds:"false"',
@@ -50,7 +50,7 @@ const PERFORMANCE_OPTIONS = [
   'particles:1',
   'entityDistanceScaling:0.75',
 ];
-const OPTIONS_VERSION = 2;
+const OPTIONS_VERSION = 3;
 
 function killTree(child, signal = 'SIGTERM') {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;

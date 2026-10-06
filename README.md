@@ -28,7 +28,7 @@ Things to know about Codespaces:
 - GitHub's free plan covers 120 core-hours a month. This project uses a 4-core machine, so that's about **30 hours of play a month**.
 - Codespaces stop after 30 minutes without editor activity by default. Raise the idle timeout (up to 4 hours) at github.com/settings/codespaces.
 - When you're done, stop the codespace (github.com/codespaces → … → Stop) so it doesn't use your hours. Worlds are kept in the codespace until you delete it.
-- There's no GPU, so the game runs at 854×480 with light graphics settings (render distance 6, no clouds, fast graphics) to keep the frame rate up. You can raise them in Options, at the cost of smoothness.
+- There's no GPU, so the game runs at 854×480 with light graphics settings (render distance 4, no clouds, fast graphics) to keep the frame rate up. You can raise them in Options, at the cost of smoothness.
 - The port is private by default, so only you (signed in to GitHub) can open the site.
 
 ## Running on your own server
