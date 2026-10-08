@@ -75,12 +75,12 @@ async function waitFor(check, timeoutMs, what) {
 }
 
 class PlayerSession extends EventEmitter {
-  constructor({ account, versionId, displayNum, baritone = false }) {
+  constructor({ account, versionId, displayNum, mods = {} }) {
     super();
     this.account = account;
     this.uuid = account.profile.id;
     this.versionId = versionId;
-    this.baritone = baritone;
+    this.wantedMods = mods;
     this.mods = null;
     this.displayNum = displayNum;
     this.display = `:${displayNum}`;
@@ -134,7 +134,7 @@ class PlayerSession extends EventEmitter {
   async start() {
     try {
       this.armIdleTimer();
-      const plan = await launcher.prepare(this.versionId, this.gameDir, (p) => { this.progress = p; }, { baritone: this.baritone });
+      const plan = await launcher.prepare(this.versionId, this.gameDir, (p) => { this.progress = p; }, this.wantedMods, (line) => this.log(line));
       this.mods = plan.mods?.label || null;
       if (this.mods) this.log(`[launcher] Starting with ${this.mods}`);
       if (this.stopping) return;
@@ -379,7 +379,7 @@ class SessionManager {
     return n;
   }
 
-  start(account, versionId, { baritone = false } = {}) {
+  start(account, versionId, mods = {}) {
     const existing = this.get(account.profile.id);
     if (existing && !existing.stopping) return existing;
     if (existing && existing.state === 'stopping') throw new Error('Your previous game is still shutting down, try again in a few seconds.');
@@ -389,7 +389,7 @@ class SessionManager {
     while (this.usedDisplays.has(displayNum)) displayNum++;
     this.usedDisplays.add(displayNum);
 
-    const session = new PlayerSession({ account, versionId, displayNum, baritone });
+    const session = new PlayerSession({ account, versionId, displayNum, mods });
     this.byUuid.set(account.profile.id, session);
     session.once('stopped', () => this.usedDisplays.delete(displayNum));
     session.start();

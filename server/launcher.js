@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 const { config } = require('./config');
 const baritoneMod = require('./baritone');
+const modrinth = require('./modrinth');
 
 const VERSION_MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const JAVA_RUNTIMES = 'https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json';
@@ -291,37 +292,92 @@ async function loadFabricProfile(versionId) {
   }
 }
 
-// Fabric + Baritone for this version: libraries and mod jar to download, and
-// what to add to the launch command. Null when Baritone has no build for it.
-async function planBaritone(versionId) {
-  const mod = baritoneMod.forVersion(versionId);
-  if (!mod) return null;
+const SKYBLOCKER = 'skyblocker-liap'; // https://modrinth.com/mod/skyblocker-liap
+
+// Downloads a Modrinth build and every required dependency Modrinth lists.
+async function fetchModrinthBuild(build, versionId, state) {
+  if (state.projects.has(build.projectId)) return;
+  state.projects.add(build.projectId);
+  const file = path.join(dirs.mods, build.filename);
+  await download(build.url, file, { sha1: build.sha1, size: build.size });
+  state.jars.push(file);
+  for (const dep of build.requires) {
+    if (state.projects.has(dep)) continue;
+    const d = await modrinth.buildFor(dep, versionId).catch(() => null);
+    if (d) await fetchModrinthBuild(d, versionId, state);
+  }
+}
+
+// Fabric plus the chosen mods for this version, or null when none of them has
+// a build for it. Mods are downloaded here, because what they need is only
+// known once the jars are on disk; the Fabric libraries are returned for the
+// caller to download along with the game's.
+async function prepareMods(versionId, { baritone = false, skyblocker = false }, log) {
+  const state = { jars: [], projects: new Set() };
+  const labels = [];
+
+  const b = baritone && baritoneMod.forVersion(versionId);
+  if (b) {
+    const file = path.join(dirs.mods, b.file);
+    await download(b.url, file, { sha1: b.sha1 });
+    state.jars.push(file);
+    labels.push(`Baritone ${b.version}`);
+  }
+
+  if (skyblocker) {
+    try {
+      const root = await modrinth.buildFor(SKYBLOCKER, versionId);
+      if (root) {
+        await fetchModrinthBuild(root, versionId, state);
+        labels.push(`Skyblocker ${root.version}`);
+        // Mods often need more than Modrinth lists (e.g. Fabric API), so read
+        // what the jars themselves ask for and fetch the rest by mod id
+        const tried = new Set();
+        for (let round = 0; round < 5; round++) {
+          const missing = modrinth.missingDependencies(state.jars).filter((id) => !tried.has(id));
+          if (!missing.length) break;
+          for (const id of missing) {
+            tried.add(id);
+            const d = await modrinth.buildFor(id, versionId).catch(() => null);
+            if (d) await fetchModrinthBuild(d, versionId, state);
+          }
+        }
+        const still = modrinth.missingDependencies(state.jars);
+        if (still.length) log?.(`[mods] Not found on Modrinth (the game may refuse to start): ${still.join(', ')}`);
+      }
+    } catch (err) {
+      log?.(`[mods] Skyblocker skipped: ${err.message}`);
+    }
+  }
+
+  if (!state.jars.length) return null;
   const profile = await loadFabricProfile(versionId);
   const libs = profile.libraries.map((l) => {
     const rel = mavenPath(l.name);
     return { name: l.name, url: `${l.url.replace(/\/?$/, '/')}${rel}`, file: path.join(dirs.libraries, rel), sha1: l.sha1, size: l.size };
   });
-  const jar = { url: mod.url, file: path.join(dirs.mods, mod.file), sha1: mod.sha1 };
   return {
-    label: `Baritone ${mod.version} (Fabric ${profile.id})`,
+    label: `${labels.join(' + ')} (Fabric)`,
     libs,
-    jar,
     mainClass: profile.mainClass,
-    jvm: [...(profile.arguments?.jvm || []), `-Dfabric.addMods=${jar.file}`],
+    // Added from our own folder, so the player's mods folder stays theirs
+    jvm: [...(profile.arguments?.jvm || []), `-Dfabric.addMods=${state.jars.join(path.delimiter)}`],
     game: profile.arguments?.game || [],
   };
 }
 
 // ---------------------------------------------------------------- public API
 
-// Versions that can be launched with Baritone preinstalled
-function baritoneVersions() {
-  return baritoneMod.supportedVersions;
+// Versions each optional mod can be preinstalled on
+async function modVersions() {
+  const skyblocker = await modrinth.fabricGameVersions(SKYBLOCKER).catch(() => []);
+  return { baritone: baritoneMod.supportedVersions, skyblocker };
 }
 
 // Downloads everything needed for `versionId` and returns a launch plan.
-// With `baritone`, versions Baritone supports launch through Fabric with it.
-async function prepare(versionId, gameDir, onProgress, { baritone = false } = {}) {
+// With `mods` ({ baritone, skyblocker }), the chosen mods that have a build for
+// this version are added and the game launches through Fabric.
+async function prepare(versionId, gameDir, onProgress, mods = {}, log = null) {
   onProgress?.({ stage: 'Reading version manifest' });
   const version = await loadVersionJson(versionId);
   if (version.inheritsFrom) throw new Error('Only vanilla versions are supported.');
@@ -340,11 +396,11 @@ async function prepare(versionId, gameDir, onProgress, { baritone = false } = {}
     logConfig = { file: path.join(dirs.assets, 'log_configs', f.id), argument: version.logging.client.argument };
     jobs.push({ url: f.url, file: logConfig.file, sha1: f.sha1, size: f.size });
   }
-  let mods = null;
-  if (baritone) {
-    onProgress?.({ stage: 'Setting up Fabric and Baritone' });
-    mods = await planBaritone(versionId);
-    if (mods) jobs.push(...mods.libs, mods.jar);
+  let fabric = null;
+  if (mods.baritone || mods.skyblocker) {
+    onProgress?.({ stage: 'Setting up Fabric and mods' });
+    fabric = await prepareMods(versionId, mods, log);
+    if (fabric) jobs.push(...fabric.libs);
   }
   let done = 0;
   await pool(jobs, 12, async (j) => {
@@ -359,12 +415,12 @@ async function prepare(versionId, gameDir, onProgress, { baritone = false } = {}
   const legacyAssetsDir = await ensureAssets(version, gameDir, onProgress);
 
   let classpath = [...libs.classpath, clientJar];
-  if (mods) {
+  if (fabric) {
     // Fabric's own copies of shared libraries (e.g. ASM) replace the game's
-    const fabricDirs = mods.libs.map((l) => `${path.dirname(path.dirname(l.file))}${path.sep}`);
-    classpath = [...mods.libs.map((l) => l.file), ...classpath.filter((f) => !fabricDirs.some((d) => f.startsWith(d)))];
+    const fabricDirs = fabric.libs.map((l) => `${path.dirname(path.dirname(l.file))}${path.sep}`);
+    classpath = [...fabric.libs.map((l) => l.file), ...classpath.filter((f) => !fabricDirs.some((d) => f.startsWith(d)))];
   }
-  return { version, javaPath, classpath, nativesDir, logConfig, legacyAssetsDir, mods };
+  return { version, javaPath, classpath, nativesDir, logConfig, legacyAssetsDir, mods: fabric };
 }
 
 // Builds the java command line for a prepared version and a signed-in account.
@@ -427,4 +483,4 @@ function buildCommand(plan, { account, gameDir, width, height }) {
   return { command: plan.javaPath, args };
 }
 
-module.exports = { listReleases, prepare, buildCommand, baritoneVersions, rulesAllow, mavenPath };
+module.exports = { listReleases, prepare, buildCommand, modVersions, rulesAllow, mavenPath };

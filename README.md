@@ -52,6 +52,12 @@ Without a GPU the game renders on the CPU (Mesa llvmpipe). Plan on ~4 cores and 
 
 [Baritone](https://github.com/cabaletta/baritone) (the pathfinding bot) comes preinstalled for every version it supports: 1.17–1.18.2, 1.19.2–1.19.4, 1.20–1.20.6, 1.21–1.21.11 and 26.1–26.3. Those versions launch through the Fabric mod loader with Baritone added. Type `#help` in chat to see its commands, e.g. `#goto x y z` or `#mine diamond_ore`. Untick **Baritone** in the lobby to play the plain game. Many multiplayer servers don't allow it, so check their rules.
 
+## Skyblocker
+
+[Skyblocker](https://modrinth.com/mod/skyblocker-liap) (Hypixel SkyBlock helper) comes preinstalled for every version it has a Fabric build for on Modrinth (currently 1.17 to 26.2). The newest build for your version is downloaded from Modrinth with whatever it needs that it doesn't bundle (Fabric API, Fabric Language Kotlin), all checked against Modrinth's checksums. Use `/skyblocker` in game for its settings, or untick **Skyblocker** in the lobby.
+
+Baritone and Skyblocker are added from the server's own folder, so anything in your `mods` folder is still loaded too.
+
 ## Controls
 
 - Click the game to capture the mouse. **Esc** releases it and opens the pause menu.

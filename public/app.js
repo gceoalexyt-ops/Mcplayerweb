@@ -114,22 +114,26 @@ $('logoutBtn').onclick = async () => {
 
 // ------------------------------------------------------------------ lobby
 
-let baritoneVersions = new Set();
+// Optional mods, each offered only for versions it has a build for
+const MODS = ['baritone', 'skyblocker'];
+let modVersions = {};
 
-// Baritone is offered only for versions it has a build for
-function updateBaritoneRow() {
-  $('baritoneRow').hidden = !baritoneVersions.has($('versionSelect').value);
+function updateModRows() {
+  const v = $('versionSelect').value;
+  for (const m of MODS) $(`${m}Row`).hidden = !modVersions[m]?.has(v);
 }
-$('versionSelect').addEventListener('change', updateBaritoneRow);
-$('baritoneBox').addEventListener('change', () => {
-  try { localStorage.setItem('mcweb.baritone', $('baritoneBox').checked ? '1' : '0'); } catch { /* private mode */ }
-});
+$('versionSelect').addEventListener('change', updateModRows);
+for (const m of MODS) {
+  $(`${m}Box`).addEventListener('change', () => {
+    try { localStorage.setItem(`mcweb.${m}`, $(`${m}Box`).checked ? '1' : '0'); } catch { /* private mode */ }
+  });
+}
 
 async function loadVersions() {
   const select = $('versionSelect');
   try {
-    const { latest, versions, baritone } = await api('/api/versions');
-    baritoneVersions = new Set(baritone || []);
+    const { latest, versions, mods } = await api('/api/versions');
+    modVersions = Object.fromEntries(MODS.map((m) => [m, new Set(mods?.[m] || [])]));
     select.innerHTML = '';
     for (const v of versions) {
       const opt = document.createElement('option');
@@ -139,8 +143,10 @@ async function loadVersions() {
     }
     const saved = localStorage.getItem('mcweb.version');
     select.value = versions.includes(saved) ? saved : latest;
-    try { $('baritoneBox').checked = localStorage.getItem('mcweb.baritone') !== '0'; } catch { /* private mode */ }
-    updateBaritoneRow();
+    for (const m of MODS) {
+      try { $(`${m}Box`).checked = localStorage.getItem(`mcweb.${m}`) !== '0'; } catch { /* private mode */ }
+    }
+    updateModRows();
     $('playBtn').disabled = false;
   } catch (err) {
     showError($('lobbyError'), err.message);
@@ -154,7 +160,7 @@ $('playBtn').onclick = async () => {
   rejoinByHand = false;
   $('playBtn').disabled = true;
   try {
-    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, baritone: $('baritoneBox').checked }) }));
+    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, baritone: $('baritoneBox').checked, skyblocker: $('skyblockerBox').checked }) }));
     pollGame();
   } catch (err) {
     showError($('lobbyError'), err.message);
