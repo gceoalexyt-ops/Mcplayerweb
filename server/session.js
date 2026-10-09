@@ -12,6 +12,7 @@ const { config } = require('./config');
 const launcher = require('./launcher');
 const { ensureFreshToken } = require('./auth');
 const { X11Input } = require('./x11input');
+const serverList = require('./serverlist');
 
 const hasPulse = config.audio && spawnSync('sh', ['-c', 'command -v pulseaudio'], { stdio: 'ignore' }).status === 0;
 
@@ -75,12 +76,13 @@ async function waitFor(check, timeoutMs, what) {
 }
 
 class PlayerSession extends EventEmitter {
-  constructor({ account, versionId, displayNum, mods = {} }) {
+  constructor({ account, versionId, displayNum, mods = {}, autoPacks = true }) {
     super();
     this.account = account;
     this.uuid = account.profile.id;
     this.versionId = versionId;
     this.wantedMods = mods;
+    this.autoPacks = autoPacks;
     this.mods = null;
     this.displayNum = displayNum;
     this.display = `:${displayNum}`;
@@ -142,6 +144,15 @@ class PlayerSession extends EventEmitter {
       await ensureFreshToken(this.account);
 
       await this.writeDefaultOptions();
+      if (this.autoPacks) {
+        // Accept servers' resource packs without the Yes/No prompt
+        try {
+          const changed = await serverList.autoAcceptResourcePacks(this.gameDir);
+          if (changed) this.log(`[launcher] Server list: ${changed}`);
+        } catch (err) {
+          this.log(`[launcher] ${err.message}`);
+        }
+      }
       await fsp.rm(this.runDir, { recursive: true, force: true });
       await fsp.mkdir(this.runDir, { recursive: true });
 
@@ -379,7 +390,7 @@ class SessionManager {
     return n;
   }
 
-  start(account, versionId, mods = {}) {
+  start(account, versionId, mods = {}, { autoPacks = true } = {}) {
     const existing = this.get(account.profile.id);
     if (existing && !existing.stopping) return existing;
     if (existing && existing.state === 'stopping') throw new Error('Your previous game is still shutting down, try again in a few seconds.');
@@ -389,7 +400,7 @@ class SessionManager {
     while (this.usedDisplays.has(displayNum)) displayNum++;
     this.usedDisplays.add(displayNum);
 
-    const session = new PlayerSession({ account, versionId, displayNum, mods });
+    const session = new PlayerSession({ account, versionId, displayNum, mods, autoPacks });
     this.byUuid.set(account.profile.id, session);
     session.once('stopped', () => this.usedDisplays.delete(displayNum));
     session.start();

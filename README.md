@@ -62,6 +62,10 @@ Without a GPU the game renders on the CPU (Mesa llvmpipe). Plan on ~4 cores and 
 
 Baritone, Skyblocker and ViaFabricPlus are added from the server's own folder, so anything in your `mods` folder is still loaded too.
 
+## Server resource packs (Hypixel)
+
+With **Accept server resource packs automatically** ticked in the lobby (on by default), every server in your multiplayer list is set to *Server Resource Packs: Enabled* before the game starts. Joining accepts the server's pack without the Yes/No prompt. Hypixel (`mc.hypixel.net`) is added to your server list once; if you remove it, it stays removed. Join from the server list rather than **Direct Connect**, because Minecraft always asks on Direct Connect. Untick the option to leave your server list alone.
+
 ## Your own mods
 
 Under **Your mods** in the lobby, upload any Fabric mod (`.jar`). Forge, NeoForge and Quilt mods are turned away with a message. Each mod can be:

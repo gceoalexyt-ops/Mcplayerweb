@@ -161,7 +161,7 @@ app.post('/api/play', requireAccount, async (req, res) => {
       skyblocker: req.body?.skyblocker !== false,
       viafabricplus: req.body?.viafabricplus !== false,
       custom: config.customMods ? await customMods.jarsFor(req.account.profile.id, version) : [],
-    });
+    }, { autoPacks: req.body?.autoPacks !== false });
     res.json(game.status());
   } catch (err) {
     res.status(409).json({ error: err.message });

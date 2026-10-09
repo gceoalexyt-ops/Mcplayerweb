@@ -127,6 +127,10 @@ function updateModRows() {
   renderCustomMods();
 }
 $('versionSelect').addEventListener('change', updateModRows);
+try { $('autoPacksBox').checked = localStorage.getItem('mcweb.autoPacks') !== '0'; } catch { /* private mode */ }
+$('autoPacksBox').addEventListener('change', () => {
+  try { localStorage.setItem('mcweb.autoPacks', $('autoPacksBox').checked ? '1' : '0'); } catch { /* private mode */ }
+});
 for (const m of MODS) {
   $(`${m}Box`).addEventListener('change', () => {
     try { localStorage.setItem(`mcweb.${m}`, $(`${m}Box`).checked ? '1' : '0'); } catch { /* private mode */ }
@@ -291,7 +295,7 @@ $('playBtn').onclick = async () => {
   rejoinByHand = false;
   $('playBtn').disabled = true;
   try {
-    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, ...Object.fromEntries(MODS.map((m) => [m, $(`${m}Box`).checked])) }) }));
+    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, autoPacks: $('autoPacksBox').checked, ...Object.fromEntries(MODS.map((m) => [m, $(`${m}Box`).checked])) }) }));
     pollGame();
   } catch (err) {
     showError($('lobbyError'), err.message);
