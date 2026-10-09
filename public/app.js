@@ -711,6 +711,7 @@ function openKeyboard() {
   tcInput.focus();
 }
 $('tcKeyboard').addEventListener('click', openKeyboard);
+$('rshiftBtn').addEventListener('click', () => tapKey('ShiftRight'));
 $('tcChat').addEventListener('click', () => { tapKey('KeyT'); openKeyboard(); });
 for (const id of ['tcKeyboard', 'tcChat', 'tcFullscreen', 'tcQuit']) {
   $(id).addEventListener('pointerdown', (e) => e.stopPropagation());
