@@ -115,8 +115,10 @@ $('logoutBtn').onclick = async () => {
 // ------------------------------------------------------------------ lobby
 
 // Optional mods, each offered only for versions it has a build for
-const MODS = ['baritone', 'skyblocker'];
+const MODS = ['baritone', 'skyblocker', 'viafabricplus'];
 let modVersions = {};
+// Picked when the player hasn't chosen a version before
+const DEFAULT_VERSION = '1.21.11';
 
 function updateModRows() {
   const v = $('versionSelect').value;
@@ -142,7 +144,7 @@ async function loadVersions() {
       select.appendChild(opt);
     }
     const saved = localStorage.getItem('mcweb.version');
-    select.value = versions.includes(saved) ? saved : latest;
+    select.value = versions.includes(saved) ? saved : versions.includes(DEFAULT_VERSION) ? DEFAULT_VERSION : latest;
     for (const m of MODS) {
       try { $(`${m}Box`).checked = localStorage.getItem(`mcweb.${m}`) !== '0'; } catch { /* private mode */ }
     }
@@ -160,7 +162,7 @@ $('playBtn').onclick = async () => {
   rejoinByHand = false;
   $('playBtn').disabled = true;
   try {
-    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, baritone: $('baritoneBox').checked, skyblocker: $('skyblockerBox').checked }) }));
+    renderStatus(await api('/api/play', { method: 'POST', body: JSON.stringify({ version, ...Object.fromEntries(MODS.map((m) => [m, $(`${m}Box`).checked])) }) }));
     pollGame();
   } catch (err) {
     showError($('lobbyError'), err.message);

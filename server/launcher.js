@@ -148,7 +148,11 @@ async function loadVersionJson(versionId) {
 
 // ---------------------------------------------------------------- java
 
-async function ensureJava(version, onProgress) {
+function ensureJava(version, onProgress) {
+  return exclusive(`java:${version.javaVersion?.component || 'jre-legacy'}`, () => ensureJavaUnlocked(version, onProgress));
+}
+
+async function ensureJavaUnlocked(version, onProgress) {
   if (config.javaPath) return config.javaPath;
   const platform = { x64: 'linux', ia32: 'linux-i386' }[process.arch];
   if (!platform) return 'java'; // Mojang ships no runtime for this CPU; use the system one
@@ -292,7 +296,11 @@ async function loadFabricProfile(versionId) {
   }
 }
 
-const SKYBLOCKER = 'skyblocker-liap'; // https://modrinth.com/mod/skyblocker-liap
+// Optional mods installed from Modrinth, by the key the site uses for them
+const MODRINTH_MODS = {
+  skyblocker: { project: 'skyblocker-liap', name: 'Skyblocker' }, // https://modrinth.com/mod/skyblocker-liap
+  viafabricplus: { project: 'viafabricplus', name: 'ViaFabricPlus' }, // https://modrinth.com/mod/viafabricplus
+};
 
 // Downloads a Modrinth build and every required dependency Modrinth lists.
 async function fetchModrinthBuild(build, versionId, state) {
@@ -312,42 +320,51 @@ async function fetchModrinthBuild(build, versionId, state) {
 // a build for it. Mods are downloaded here, because what they need is only
 // known once the jars are on disk; the Fabric libraries are returned for the
 // caller to download along with the game's.
-async function prepareMods(versionId, { baritone = false, skyblocker = false }, log) {
+async function prepareMods(versionId, wanted, log) {
   const state = { jars: [], projects: new Set() };
   const labels = [];
 
-  const b = baritone && baritoneMod.forVersion(versionId);
+  const b = wanted.baritone && baritoneMod.forVersion(versionId);
   if (b) {
-    const file = path.join(dirs.mods, b.file);
-    await download(b.url, file, { sha1: b.sha1 });
-    state.jars.push(file);
-    labels.push(`Baritone ${b.version}`);
+    try {
+      const file = path.join(dirs.mods, b.file);
+      await download(b.url, file, { sha1: b.sha1 });
+      state.jars.push(file);
+      labels.push(`Baritone ${b.version}`);
+    } catch (err) {
+      log?.(`[mods] Baritone skipped: ${err.message}`);
+    }
   }
 
-  if (skyblocker) {
+  let fromModrinth = false;
+  for (const [key, mod] of Object.entries(MODRINTH_MODS)) {
+    if (!wanted[key]) continue;
     try {
-      const root = await modrinth.buildFor(SKYBLOCKER, versionId);
-      if (root) {
-        await fetchModrinthBuild(root, versionId, state);
-        labels.push(`Skyblocker ${root.version}`);
-        // Mods often need more than Modrinth lists (e.g. Fabric API), so read
-        // what the jars themselves ask for and fetch the rest by mod id
-        const tried = new Set();
-        for (let round = 0; round < 5; round++) {
-          const missing = modrinth.missingDependencies(state.jars).filter((id) => !tried.has(id));
-          if (!missing.length) break;
-          for (const id of missing) {
-            tried.add(id);
-            const d = await modrinth.buildFor(id, versionId).catch(() => null);
-            if (d) await fetchModrinthBuild(d, versionId, state);
-          }
-        }
-        const still = modrinth.missingDependencies(state.jars);
-        if (still.length) log?.(`[mods] Not found on Modrinth (the game may refuse to start): ${still.join(', ')}`);
-      }
+      const root = await modrinth.buildFor(mod.project, versionId);
+      if (!root) continue;
+      await fetchModrinthBuild(root, versionId, state);
+      labels.push(`${mod.name} ${root.version}`);
+      fromModrinth = true;
     } catch (err) {
-      log?.(`[mods] Skyblocker skipped: ${err.message}`);
+      log?.(`[mods] ${mod.name} skipped: ${err.message}`);
     }
+  }
+
+  if (fromModrinth) {
+    // Mods often need more than Modrinth lists (e.g. Fabric API), so read
+    // what the jars themselves ask for and fetch the rest by mod id
+    const tried = new Set();
+    for (let round = 0; round < 5; round++) {
+      const missing = modrinth.missingDependencies(state.jars).filter((id) => !tried.has(id));
+      if (!missing.length) break;
+      for (const id of missing) {
+        tried.add(id);
+        const d = await modrinth.buildFor(id, versionId).catch(() => null);
+        if (d) await fetchModrinthBuild(d, versionId, state);
+      }
+    }
+    const still = modrinth.missingDependencies(state.jars);
+    if (still.length) log?.(`[mods] Not found on Modrinth (the game may refuse to start): ${still.join(', ')}`);
   }
 
   if (!state.jars.length) return null;
@@ -370,14 +387,33 @@ async function prepareMods(versionId, { baritone = false, skyblocker = false }, 
 
 // Versions each optional mod can be preinstalled on
 async function modVersions() {
-  const skyblocker = await modrinth.fabricGameVersions(SKYBLOCKER).catch(() => []);
-  return { baritone: baritoneMod.supportedVersions, skyblocker };
+  const result = { baritone: baritoneMod.supportedVersions };
+  await Promise.all(Object.entries(MODRINTH_MODS).map(async ([key, mod]) => {
+    result[key] = await modrinth.fabricGameVersions(mod.project).catch(() => []);
+  }));
+  return result;
 }
 
 // Downloads everything needed for `versionId` and returns a launch plan.
-// With `mods` ({ baritone, skyblocker }), the chosen mods that have a build for
+// With `mods` ({ baritone, skyblocker, viafabricplus }), the chosen mods that have a build for
 // this version are added and the game launches through Fabric.
-async function prepare(versionId, gameDir, onProgress, mods = {}, log = null) {
+// Runs fn after any earlier call with the same key has finished, so two
+// installs of the same files (e.g. the startup preload and a player) don't race.
+const locks = new Map();
+function exclusive(key, fn) {
+  const prev = locks.get(key) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tail = run.catch(() => {});
+  locks.set(key, tail);
+  tail.then(() => { if (locks.get(key) === tail) locks.delete(key); });
+  return run;
+}
+
+function prepare(versionId, ...rest) {
+  return exclusive(`version:${versionId}`, () => prepareUnlocked(versionId, ...rest));
+}
+
+async function prepareUnlocked(versionId, gameDir, onProgress, mods = {}, log = null) {
   onProgress?.({ stage: 'Reading version manifest' });
   const version = await loadVersionJson(versionId);
   if (version.inheritsFrom) throw new Error('Only vanilla versions are supported.');
@@ -397,7 +433,7 @@ async function prepare(versionId, gameDir, onProgress, mods = {}, log = null) {
     jobs.push({ url: f.url, file: logConfig.file, sha1: f.sha1, size: f.size });
   }
   let fabric = null;
-  if (mods.baritone || mods.skyblocker) {
+  if (Object.values(mods).some(Boolean)) {
     onProgress?.({ stage: 'Setting up Fabric and mods' });
     fabric = await prepareMods(versionId, mods, log);
     if (fabric) jobs.push(...fabric.libs);

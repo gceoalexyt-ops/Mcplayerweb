@@ -158,6 +158,7 @@ app.post('/api/play', requireAccount, async (req, res) => {
     const game = games.start(req.account, version, {
       baritone: req.body?.baritone !== false,
       skyblocker: req.body?.skyblocker !== false,
+      viafabricplus: req.body?.viafabricplus !== false,
     });
     res.json(game.status());
   } catch (err) {
@@ -240,7 +241,25 @@ server.listen(config.port, () => {
   console.log(`\nMinecraft web player is running: ${config.baseUrl}`);
   if (config.msClientId) console.log(`Azure redirect URI must be:      ${config.msRedirectUri}`);
   console.log('');
+  preload();
 });
+
+// Downloads the default version (and Fabric with every optional mod) ahead of
+// time. Uses the same files a player's launch does, so their Play is quick.
+async function preload() {
+  const v = config.preloadVersion;
+  if (!v) return;
+  try {
+    const { versions } = await launcher.listReleases();
+    if (!versions.includes(v)) return console.log(`[preload] ${v} is not a Minecraft release, skipping`);
+    console.log(`[preload] Downloading Minecraft ${v} with Fabric and mods in the background...`);
+    const mods = { baritone: true, skyblocker: true, viafabricplus: true };
+    const plan = await launcher.prepare(v, path.join(config.dataDir, 'preload'), null, mods, (l) => console.log(l));
+    console.log(`[preload] Minecraft ${v} is ready${plan.mods ? ` with ${plan.mods.label}` : ''}`);
+  } catch (err) {
+    console.log(`[preload] Failed, ${v} will download when someone presses Play: ${err.message}`);
+  }
+}
 
 async function shutdown() {
   console.log('Shutting down, saving running games...');

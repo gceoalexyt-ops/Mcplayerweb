@@ -44,6 +44,8 @@ const config = {
   runtimeDir: path.resolve(process.env.RUNTIME_DIR || '/tmp/mcweb'),
 
   maxSessions: int('MAX_SESSIONS', 2),
+  // Downloaded in the background at startup so the first Play is quick ('' turns it off)
+  preloadVersion: process.env.PRELOAD_VERSION ?? '1.21.11',
   idleTimeoutMs: int('IDLE_TIMEOUT_MINUTES', 10) * 60 * 1000,
 
   screenWidth: int('SCREEN_WIDTH', 1280),

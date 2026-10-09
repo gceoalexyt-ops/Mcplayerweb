@@ -56,7 +56,15 @@ Without a GPU the game renders on the CPU (Mesa llvmpipe). Plan on ~4 cores and 
 
 [Skyblocker](https://modrinth.com/mod/skyblocker-liap) (Hypixel SkyBlock helper) comes preinstalled for every version it has a Fabric build for on Modrinth (currently 1.17 to 26.2). The newest build for your version is downloaded from Modrinth with whatever it needs that it doesn't bundle (Fabric API, Fabric Language Kotlin), all checked against Modrinth's checksums. Use `/skyblocker` in game for its settings, or untick **Skyblocker** in the lobby.
 
-Baritone and Skyblocker are added from the server's own folder, so anything in your `mods` folder is still loaded too.
+## ViaFabricPlus
+
+[ViaFabricPlus](https://modrinth.com/mod/viafabricplus) (ViaVersion for Fabric players) comes preinstalled for every version it has a Fabric build for on Modrinth, including 1.21.11. It lets you join servers running other Minecraft versions: pick the server's version with the button on the multiplayer screen. Untick **ViaFabricPlus** in the lobby to leave it out.
+
+Baritone, Skyblocker and ViaFabricPlus are added from the server's own folder, so anything in your `mods` folder is still loaded too.
+
+## Default version
+
+The lobby picks **1.21.11** until you choose another version. When the server starts, it downloads 1.21.11 with Fabric and all three mods in the background, so the first Play is quick. Set `PRELOAD_VERSION` to preload a different version, or set it empty to turn this off.
 
 ## Controls
 
