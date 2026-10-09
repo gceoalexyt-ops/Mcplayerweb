@@ -151,7 +151,8 @@ body.touch-mode .stage canvas {
 .tc-btn.big { min-width: 72px; height: 72px; border-radius: 50%; }
 .tc-top {
   position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right));
-  display: flex; gap: 8px;
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+  max-width: calc(100% - 16px);
 }
 .tc-play { position: absolute; inset: 0; pointer-events: none; }
 .tc-play > * { pointer-events: auto; }
