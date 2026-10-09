@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 const { config } = require('./config');
 const auth = require('./auth');
 const launcher = require('./launcher');
+const customMods = require('./custommods');
 const { SessionManager } = require('./session');
 
 const app = express();
@@ -159,10 +160,65 @@ app.post('/api/play', requireAccount, async (req, res) => {
       baritone: req.body?.baritone !== false,
       skyblocker: req.body?.skyblocker !== false,
       viafabricplus: req.body?.viafabricplus !== false,
+      custom: config.customMods ? await customMods.jarsFor(req.account.profile.id, version) : [],
     });
     res.json(game.status());
   } catch (err) {
     res.status(409).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------- custom mods
+
+function requireCustomMods(req, res, next) {
+  if (!config.customMods) return res.status(403).json({ error: 'Custom mods are turned off on this server.' });
+  next();
+}
+
+function modError(res, err) {
+  if (err instanceof customMods.ModError) return res.status(400).json({ error: err.message });
+  console.error('Custom mod error:', err);
+  res.status(500).json({ error: 'Something went wrong with that mod.' });
+}
+
+app.get('/api/mods', requireAccount, async (req, res) => {
+  res.json({ enabled: config.customMods, mods: config.customMods ? await customMods.list(req.account.profile.id) : [] });
+});
+
+app.post('/api/mods', requireAccount, requireCustomMods,
+  express.raw({ type: 'application/octet-stream', limit: customMods.MAX_BYTES }),
+  async (req, res) => {
+    try {
+      res.json(await customMods.add(req.account.profile.id, req.query.name, Buffer.isBuffer(req.body) ? req.body : null));
+    } catch (err) {
+      modError(res, err);
+    }
+  });
+
+app.patch('/api/mods/:id', requireAccount, requireCustomMods, async (req, res) => {
+  const changes = {};
+  if (typeof req.body?.enabled === 'boolean') changes.enabled = req.body.enabled;
+  if (req.body && 'alwaysVersion' in req.body) {
+    const v = req.body.alwaysVersion;
+    if (v !== null && v !== '') {
+      const { versions } = await launcher.listReleases().catch(() => ({ versions: [] }));
+      if (!versions.includes(v)) return res.status(400).json({ error: 'Pick a release version.' });
+    }
+    changes.alwaysVersion = v || null;
+  }
+  try {
+    res.json(await customMods.update(req.account.profile.id, String(req.params.id), changes));
+  } catch (err) {
+    modError(res, err);
+  }
+});
+
+app.delete('/api/mods/:id', requireAccount, requireCustomMods, async (req, res) => {
+  try {
+    await customMods.remove(req.account.profile.id, String(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    modError(res, err);
   }
 });
 

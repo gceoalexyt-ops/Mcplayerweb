@@ -44,6 +44,9 @@ const config = {
   runtimeDir: path.resolve(process.env.RUNTIME_DIR || '/tmp/mcweb'),
 
   maxSessions: int('MAX_SESSIONS', 2),
+  // Players can upload their own Fabric mods. Mods run as code on this server,
+  // so turn this off ('0') if people you don't trust can sign in.
+  customMods: process.env.CUSTOM_MODS !== '0',
   // Downloaded in the background at startup so the first Play is quick ('' turns it off)
   preloadVersion: process.env.PRELOAD_VERSION ?? '1.21.11',
   idleTimeoutMs: int('IDLE_TIMEOUT_MINUTES', 10) * 60 * 1000,

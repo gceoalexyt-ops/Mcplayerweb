@@ -62,6 +62,17 @@ Without a GPU the game renders on the CPU (Mesa llvmpipe). Plan on ~4 cores and 
 
 Baritone, Skyblocker and ViaFabricPlus are added from the server's own folder, so anything in your `mods` folder is still loaded too.
 
+## Your own mods
+
+Under **Your mods** in the lobby, upload any Fabric mod (`.jar`). Forge, NeoForge and Quilt mods are turned away with a message. Each mod can be:
+
+- **Loaded when ticked:** the tick box decides, on whatever version you play.
+- **Pinned to a version** ("Always on 1.21.11"): it always loads when you play that version and never on others. That's handy for mods made for one version only.
+
+If a mod needs other mods (Fabric API, etc.), they're fetched from Modrinth automatically when possible. Uploaded mods are stored per player in `DATA_DIR/players/<uuid>/custom-mods`, at most 50 mods of up to 100 MB each, and they're kept until you remove them. Mods are only checked to be Fabric mods. They are not scanned for anything harmful.
+
+**Security:** a mod is code that runs on the server, so anyone who can sign in can run any program there. That's fine for your own Codespace. On a server shared with people you don't fully trust, set `CUSTOM_MODS=0` to turn uploads off.
+
 ## Default version
 
 The lobby picks **1.21.11** until you choose another version. When the server starts, it downloads 1.21.11 with Fabric and all three mods in the background, so the first Play is quick. Set `PRELOAD_VERSION` to preload a different version, or set it empty to turn this off.

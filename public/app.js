@@ -47,6 +47,7 @@ async function boot() {
   setFace($('lobbyFace'), me.skinUrl);
   show('lobbyView');
   loadVersions();
+  loadCustomMods();
   pollGame();
 }
 
@@ -123,6 +124,7 @@ const DEFAULT_VERSION = '1.21.11';
 function updateModRows() {
   const v = $('versionSelect').value;
   for (const m of MODS) $(`${m}Row`).hidden = !modVersions[m]?.has(v);
+  renderCustomMods();
 }
 $('versionSelect').addEventListener('change', updateModRows);
 for (const m of MODS) {
@@ -136,6 +138,7 @@ async function loadVersions() {
   try {
     const { latest, versions, mods } = await api('/api/versions');
     modVersions = Object.fromEntries(MODS.map((m) => [m, new Set(mods?.[m] || [])]));
+    allVersions = versions;
     select.innerHTML = '';
     for (const v of versions) {
       const opt = document.createElement('option');
@@ -154,6 +157,106 @@ async function loadVersions() {
     showError($('lobbyError'), err.message);
   }
 }
+
+// ------------------------------------------------------------------ your mods
+
+// Each uploaded mod is either loaded when ticked, or pinned to one version
+// (always loaded there, never elsewhere). Settings live on the server.
+let customMods = [];
+let allVersions = [];
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+async function loadCustomMods() {
+  try {
+    const { enabled, mods } = await api('/api/mods');
+    $('customMods').hidden = !enabled;
+    customMods = mods;
+    renderCustomMods();
+  } catch { /* leave the section hidden */ }
+}
+
+async function changeMod(mod, changes) {
+  try {
+    Object.assign(mod, await api(`/api/mods/${encodeURIComponent(mod.id)}`, { method: 'PATCH', body: JSON.stringify(changes) }));
+  } catch (err) {
+    showError($('lobbyError'), err.message);
+  }
+  renderCustomMods();
+}
+
+function renderCustomMods() {
+  const list = $('cmList');
+  if (!list) return;
+  const selected = $('versionSelect').value;
+  list.replaceChildren(...customMods.map((mod) => {
+    const pinned = mod.alwaysVersion;
+    const box = el('input', { type: 'checkbox' });
+    box.checked = pinned ? pinned === selected : mod.enabled;
+    box.disabled = !!pinned;
+    box.title = pinned ? 'Pinned: loads whenever you play its version' : 'Load this mod';
+    box.addEventListener('change', () => changeMod(mod, { enabled: box.checked }));
+
+    const details = [mod.version && `v${mod.version}`, mod.minecraft && `made for MC ${mod.minecraft}`, mod.filename].filter(Boolean).join(' · ');
+    let meta;
+    if (pinned === selected) meta = el('div', { className: 'cm-meta pinned', textContent: `Always loads on ${pinned}` });
+    else if (pinned) meta = el('div', { className: 'cm-meta', textContent: `Only loads on ${pinned}` });
+    else meta = el('div', { className: 'cm-meta', textContent: details });
+    if (pinned) meta.title = details;
+
+    const pin = el('select', { title: 'Always load this mod on one version' });
+    pin.append(el('option', { value: '', textContent: 'Load when ticked' }));
+    const options = [...new Set([pinned, ...allVersions].filter(Boolean))];
+    for (const v of options) pin.append(el('option', { value: v, textContent: `Always on ${v}` }));
+    pin.value = pinned || '';
+    pin.addEventListener('change', () => changeMod(mod, { alwaysVersion: pin.value || null }));
+
+    const remove = el('button', { type: 'button', className: 'btn ghost small cm-remove', textContent: 'Remove' });
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Remove ${mod.name}?`)) return;
+      try {
+        await api(`/api/mods/${encodeURIComponent(mod.id)}`, { method: 'DELETE' });
+        customMods = customMods.filter((m) => m !== mod);
+      } catch (err) {
+        showError($('lobbyError'), err.message);
+      }
+      renderCustomMods();
+    });
+
+    return el('li', { className: 'cm-row' }, box, el('div', { className: 'cm-info' }, el('div', { className: 'cm-name', textContent: mod.name, title: mod.name }), meta), pin, remove);
+  }));
+}
+
+$('modUpload').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  showError($('lobbyError'), '');
+  const busy = $('cmBusy');
+  const errors = [];
+  for (const file of files) {
+    busy.hidden = false;
+    busy.textContent = `Uploading ${file.name}…`;
+    try {
+      const res = await fetch(`/api/mods?name=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(res.status === 413 ? 'Mods can be at most 100 MB.' : data.error || `HTTP ${res.status}`);
+      customMods.push(data);
+      renderCustomMods();
+    } catch (err) {
+      errors.push(`${file.name}: ${err.message}`);
+    }
+  }
+  busy.hidden = true;
+  if (errors.length) showError($('lobbyError'), errors.join('\n'));
+});
 
 $('playBtn').onclick = async () => {
   const version = $('versionSelect').value;

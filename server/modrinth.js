@@ -121,4 +121,15 @@ function missingDependencies(jarFiles) {
   return [...needed].filter((d) => !provided.has(d));
 }
 
-module.exports = { fabricGameVersions, buildFor, missingDependencies };
+// What a jar is: its parsed fabric.mod.json, or which other loader it is for
+function inspectJar(buf) {
+  let meta = null;
+  try { meta = JSON.parse(readZipEntry(buf, 'fabric.mod.json')?.toString('utf8')); } catch { /* not readable */ }
+  if (meta && meta.id) return { loader: 'fabric', meta };
+  if (readZipEntry(buf, 'quilt.mod.json')) return { loader: 'Quilt' };
+  if (readZipEntry(buf, 'META-INF/neoforge.mods.toml')) return { loader: 'NeoForge' };
+  if (readZipEntry(buf, 'META-INF/mods.toml') || readZipEntry(buf, 'mcmod.info')) return { loader: 'Forge' };
+  return { loader: null };
+}
+
+module.exports = { fabricGameVersions, buildFor, missingDependencies, inspectJar };

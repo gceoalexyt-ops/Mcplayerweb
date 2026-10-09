@@ -66,6 +66,16 @@
           <input type="checkbox" id="viafabricplusBox" checked>
           <span>ViaFabricPlus <span class="muted">(join servers on other Minecraft versions, pick one on the multiplayer screen)</span></span>
         </label>
+        <div class="custom-mods" id="customMods" hidden>
+          <div class="cm-head">
+            <h3>Your mods</h3>
+            <label class="btn ghost small" for="modUpload">+ Add mod (.jar)</label>
+            <input type="file" id="modUpload" accept=".jar,application/java-archive" multiple hidden>
+          </div>
+          <p class="muted cm-help" id="cmHelp">Upload Fabric mods. Tick a mod to load it, or pin it to a version so it always loads when you play that version.</p>
+          <p class="muted cm-help" id="cmBusy" hidden></p>
+          <ul class="cm-list" id="cmList"></ul>
+        </div>
         <p id="lobbyError" class="error" hidden></p>
 
         <div id="statusBox" class="status" hidden>

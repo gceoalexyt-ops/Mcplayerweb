@@ -350,7 +350,14 @@ async function prepareMods(versionId, wanted, log) {
     }
   }
 
-  if (fromModrinth) {
+  // The player's own uploaded mods
+  const custom = (wanted.custom || []).filter((f) => fs.existsSync(f));
+  if (custom.length) {
+    state.jars.push(...custom);
+    labels.push(custom.length === 1 ? '1 custom mod' : `${custom.length} custom mods`);
+  }
+
+  if (fromModrinth || custom.length) {
     // Mods often need more than Modrinth lists (e.g. Fabric API), so read
     // what the jars themselves ask for and fetch the rest by mod id
     const tried = new Set();
@@ -395,7 +402,7 @@ async function modVersions() {
 }
 
 // Downloads everything needed for `versionId` and returns a launch plan.
-// With `mods` ({ baritone, skyblocker, viafabricplus }), the chosen mods that have a build for
+// With `mods` ({ baritone, skyblocker, viafabricplus, custom: [jar paths] }), the chosen mods that have a build for
 // this version are added and the game launches through Fabric.
 // Runs fn after any earlier call with the same key has finished, so two
 // installs of the same files (e.g. the startup preload and a player) don't race.
@@ -433,7 +440,7 @@ async function prepareUnlocked(versionId, gameDir, onProgress, mods = {}, log = 
     jobs.push({ url: f.url, file: logConfig.file, sha1: f.sha1, size: f.size });
   }
   let fabric = null;
-  if (Object.values(mods).some(Boolean)) {
+  if (Object.values(mods).some((v) => (Array.isArray(v) ? v.length > 0 : Boolean(v)))) {
     onProgress?.({ stage: 'Setting up Fabric and mods' });
     fabric = await prepareMods(versionId, mods, log);
     if (fabric) jobs.push(...fabric.libs);
