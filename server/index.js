@@ -186,10 +186,18 @@ app.get('/api/mods', requireAccount, async (req, res) => {
 });
 
 app.post('/api/mods', requireAccount, requireCustomMods,
-  express.raw({ type: 'application/octet-stream', limit: customMods.MAX_BYTES }),
+  express.raw({ type: 'application/octet-stream', limit: customMods.CHUNK_MAX }),
   async (req, res) => {
     try {
-      res.json(await customMods.add(req.account.profile.id, req.query.name, Buffer.isBuffer(req.body) ? req.body : null));
+      const chunk = Buffer.isBuffer(req.body) ? req.body : null;
+      const q = req.query;
+      // Without upload=..., the whole file came in this one request
+      const result = q.upload
+        ? await customMods.addChunk(req.account.profile.id, {
+          uploadId: String(q.upload), offset: Number(q.offset), total: Number(q.total), name: q.name,
+        }, chunk)
+        : await customMods.add(req.account.profile.id, q.name, chunk);
+      res.json(result);
     } catch (err) {
       modError(res, err);
     }

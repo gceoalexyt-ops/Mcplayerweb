@@ -8,7 +8,7 @@ const fsp = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { config } = require('./config');
-const { inspectJar } = require('./modrinth');
+const { inspectJar, isZip } = require('./modrinth');
 
 const MAX_BYTES = 100 * 1024 * 1024;
 const MAX_MODS = 50;
@@ -60,7 +60,7 @@ function add(uuid, filename, buf) {
   return locked(uuid, async () => {
     if (!buf?.length) throw new ModError('The file is empty.');
     if (buf.length > MAX_BYTES) throw new ModError('Mods can be at most 100 MB.');
-    if (buf.readUInt32LE(0) !== 0x04034b50) throw new ModError('That is not a .jar file.');
+    if (buf.length < 22 || !isZip(buf)) throw new ModError('That is not a .jar file.');
 
     const kind = inspectJar(buf);
     if (kind.loader !== 'fabric') {
@@ -122,6 +122,49 @@ function remove(uuid, id) {
   });
 }
 
+// Uploads arrive in pieces (so no proxy's request size limit gets in the
+// way). Pieces are appended to a temporary file in order; the last one adds
+// the finished jar. Returns { received } until then, then the new mod.
+const CHUNK_MAX = 8 * 1024 * 1024;
+
+function addChunk(uuid, { uploadId, offset, total, name }, chunk) {
+  return locked(`upload:${uuid}`, async () => {
+    if (!/^[a-f0-9]{16,64}$/.test(uploadId || '')) throw new ModError('Bad upload id.');
+    if (!Number.isInteger(total) || total <= 0) throw new ModError('The file is empty.');
+    if (total > MAX_BYTES) throw new ModError('Mods can be at most 100 MB.');
+    if (!Number.isInteger(offset) || offset < 0 || !chunk?.length || chunk.length > CHUNK_MAX || offset + chunk.length > total) {
+      throw new ModError('Upload got out of step, please try again.');
+    }
+    const dir = dirFor(uuid);
+    const part = path.join(dir, `upload-${uploadId}.part`);
+    await fsp.mkdir(dir, { recursive: true });
+    if (offset === 0) {
+      await cleanStaleParts(dir);
+      await fsp.writeFile(part, chunk);
+    } else {
+      const have = await fsp.stat(part).then((st) => st.size, () => -1);
+      if (have !== offset) throw new ModError('Upload got out of step, please try again.');
+      await fsp.appendFile(part, chunk);
+    }
+    if (offset + chunk.length < total) return { received: offset + chunk.length };
+    try {
+      return await add(uuid, name, await fsp.readFile(part));
+    } finally {
+      await fsp.rm(part, { force: true });
+    }
+  });
+}
+
+// Leftovers from uploads that were abandoned more than a day ago
+async function cleanStaleParts(dir) {
+  const names = await fsp.readdir(dir).catch(() => []);
+  await Promise.all(names.filter((n) => n.endsWith('.part')).map(async (n) => {
+    const f = path.join(dir, n);
+    const st = await fsp.stat(f).catch(() => null);
+    if (st && Date.now() - st.mtimeMs > 24 * 3600 * 1000) await fsp.rm(f, { force: true });
+  }));
+}
+
 // Jar paths to load when this player starts `versionId`
 async function jarsFor(uuid, versionId) {
   const mods = await load(uuid);
@@ -130,4 +173,4 @@ async function jarsFor(uuid, versionId) {
     .map((m) => path.join(dirFor(uuid), m.file));
 }
 
-module.exports = { ModError, MAX_BYTES, list, add, update, remove, jarsFor };
+module.exports = { ModError, MAX_BYTES, CHUNK_MAX, list, add, addChunk, update, remove, jarsFor };

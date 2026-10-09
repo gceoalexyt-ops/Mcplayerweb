@@ -231,6 +231,38 @@ function renderCustomMods() {
   }));
 }
 
+// Sends a mod in 4 MB pieces, so proxies in front of the server (e.g. a
+// Codespaces port) never see one big request they might refuse.
+const UPLOAD_CHUNK = 4 * 1024 * 1024;
+async function uploadMod(file, onProgress) {
+  if (file.size > 100 * 1024 * 1024) throw new Error('Mods can be at most 100 MB.');
+  const uploadId = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  let offset = 0;
+  for (;;) {
+    const piece = file.slice(offset, offset + UPLOAD_CHUNK);
+    const q = new URLSearchParams({ name: file.name, upload: uploadId, offset, total: file.size });
+    let res;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetch(`/api/mods?${q}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: piece });
+        if (res.status < 500 || attempt >= 2) break;
+      } catch (err) {
+        if (attempt >= 2) throw new Error(`The connection dropped while uploading (${err.message}).`);
+      }
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      if (data?.error) throw new Error(data.error);
+      if (res.status === 401) throw new Error('You were signed out. Reload the page and sign in again.');
+      throw new Error(`The server refused the upload (HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}).`);
+    }
+    offset += piece.size;
+    onProgress(Math.round((100 * offset) / file.size));
+    if (offset >= file.size) return data;
+  }
+}
+
 $('modUpload').addEventListener('change', async (e) => {
   const files = [...e.target.files];
   e.target.value = '';
@@ -241,13 +273,7 @@ $('modUpload').addEventListener('change', async (e) => {
     busy.hidden = false;
     busy.textContent = `Uploading ${file.name}…`;
     try {
-      const res = await fetch(`/api/mods?name=${encodeURIComponent(file.name)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: file,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(res.status === 413 ? 'Mods can be at most 100 MB.' : data.error || `HTTP ${res.status}`);
+      const data = await uploadMod(file, (pct) => { busy.textContent = `Uploading ${file.name}… ${pct}%`; });
       customMods.push(data);
       renderCustomMods();
     } catch (err) {
