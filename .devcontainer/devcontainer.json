@@ -2,7 +2,7 @@
   "name": "Minecraft Web Player",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "hostRequirements": {
-    "cpus": 4,
+    "cpus": 2,
     "memory": "8gb"
   },
   "containerEnv": {

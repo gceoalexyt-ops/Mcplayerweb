@@ -25,8 +25,8 @@ The downloader was tested against Mojang's servers with Minecraft 26.3: every fi
 4. Pick a version and press **Play**.
 
 Things to know about Codespaces:
-- GitHub's free plan covers 120 core-hours a month. This project uses a 4-core machine, so that's about **30 hours of play a month**.
-- Codespaces stop after 30 minutes without editor activity by default. Raise the idle timeout (up to 4 hours) at github.com/settings/codespaces.
+- GitHub's free plan covers 120 core-hours a month, which resets each billing month. The project needs at least a 2-core machine: that's about **60 hours of play a month** on 2 cores, or 30 on 4 cores (smoother). Pick the size under **Change options** when creating the codespace, or later via **Change machine type**. Verified students get 180 core-hours a month (GitHub Education).
+- A running codespace uses up hours even when nobody is playing. Stop it when you're done (github.com/codespaces → … → Stop), and keep the idle timeout short (github.com/settings/codespaces, e.g. 30 minutes) so a forgotten one stops by itself. If it stops while you're playing, raise it a little (e.g. 60 minutes).
 - When you're done, stop the codespace (github.com/codespaces → … → Stop) so it doesn't use your hours. Worlds are kept in the codespace until you delete it.
 - There's no GPU, so the game runs at 854×480 with light graphics settings (render distance 4, no clouds, fast graphics) to keep the frame rate up. You can raise them in Options, at the cost of smoothness.
 - The port is private by default, so only you (signed in to GitHub) can open the site.
